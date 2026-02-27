@@ -2,7 +2,7 @@ name: Odoo Upstream Sync
 
 on:
   schedule:
-    - cron: '0 */1 * * *'   # every 1 hour (adjust if you want less frequent)
+    - cron: '0 */6 * * *'   # every 1 hour (adjust if you want less frequent)
   workflow_dispatch:
 
 permissions:
