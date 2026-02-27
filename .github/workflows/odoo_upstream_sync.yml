@@ -1,0 +1,47 @@
+name: Odoo Upstream Sync
+
+on:
+  schedule:
+    - cron: '0 */1 * * *'   # every 1 hour (adjust if you want less frequent)
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required so the workflow can push merges
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        branch: [ "19.0" ]   # add more branches if needed
+
+    steps:
+      - name: Sync ${{ matrix.branch }} from upstream via API
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          script: |
+            const branch = "${{ matrix.branch }}";
+
+            try {
+              const res = await github.request(
+                "POST /repos/{owner}/{repo}/merge-upstream",
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  branch,
+                }
+              );
+
+              core.info(`Successfully synced ${branch}. Merge type: ${res.data.merge_type}`);
+            } catch (e) {
+              if (e.status === 409) {
+                core.setFailed(`Merge conflict syncing ${branch}. Resolve via PR or manual merge.`);
+              } else if (e.status === 404) {
+                core.setFailed(`Upstream not configured or repo is not marked as a fork.`);
+              } else {
+                core.setFailed(`Failed to sync ${branch}: ${e.message}`);
+              }
+            }
