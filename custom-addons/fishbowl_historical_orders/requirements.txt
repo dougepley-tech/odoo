@@ -1,0 +1,2 @@
+# Optional: install if your Odoo environment does not already provide it
+pymysql>=1.0.0

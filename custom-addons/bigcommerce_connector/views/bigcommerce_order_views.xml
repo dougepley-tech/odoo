@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_bigcommerce_order_sync_form" model="ir.ui.view">
+        <field name="name">bigcommerce.order.sync.form</field>
+        <field name="model">bigcommerce.order.sync</field>
+        <field name="arch" type="xml">
+            <form string="Order Sync">
+                <header>
+                    <button name="action_sync_orders" string="Start Sync" type="object" class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_cancel_sync" string="Cancel" type="object" class="btn-danger" invisible="state != 'running'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,running,done"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="config_id"/>
+                            <field name="sync_date"/>
+                        </group>
+                        <group>
+                            <field name="orders_created"/>
+                            <field name="orders_updated"/>
+                            <field name="orders_failed"/>
+                        </group>
+                    </group>
+                    <group string="Progress" invisible="state != 'running'">
+                        <field name="current_item" readonly="1" nolabel="1" placeholder="Waiting to start..."/>
+                        <field name="progress_percentage" widget="progressbar" invisible="not total_items"/>
+                        <group invisible="not total_items">
+                            <group>
+                                <label for="processed_items" string="Processed:"/>
+                                <field name="processed_items" readonly="1" nolabel="1"/>
+                                <span>/</span>
+                                <field name="total_items" readonly="1" nolabel="1"/>
+                            </group>
+                        </group>
+                    </group>
+                    <group string="Specific order" invisible="state != 'draft'">
+                        <field name="sync_specific_order"/>
+                        <field name="bigcommerce_order_id" invisible="not sync_specific_order" placeholder="e.g. 12345"/>
+                    </group>
+                    <group string="Filters" invisible="sync_specific_order">
+                        <field name="date_from"/>
+                        <field name="date_to"/>
+                        <field name="min_date_modified"/>
+                    </group>
+                    <group string="Error Information" invisible="state != 'error'">
+                        <field name="error_message" nolabel="1" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_order_sync_list" model="ir.ui.view">
+        <field name="name">bigcommerce.order.sync.list</field>
+        <field name="model">bigcommerce.order.sync</field>
+        <field name="arch" type="xml">
+            <list string="Order Syncs">
+                <field name="name"/>
+                <field name="config_id"/>
+                <field name="sync_date"/>
+                <field name="state"/>
+                <field name="orders_created"/>
+                <field name="orders_updated"/>
+                <field name="orders_failed"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_order_sync_search" model="ir.ui.view">
+        <field name="name">bigcommerce.order.sync.search</field>
+        <field name="model">bigcommerce.order.sync</field>
+        <field name="arch" type="xml">
+            <search string="Order Syncs">
+                <field name="name"/>
+                <field name="config_id"/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
+                <filter string="Done" name="done" domain="[('state', '=', 'done')]"/>
+                <filter string="Error" name="error" domain="[('state', '=', 'error')]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="bigcommerce_connector.action_bigcommerce_order_sync" model="ir.actions.act_window">
+        <field name="name">Order Syncs</field>
+        <field name="res_model">bigcommerce.order.sync</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Extend sale order view -->
+    <record id="sale_order_form_view_inherit_bigcommerce" model="ir.ui.view">
+        <field name="name">sale.order.form.bigcommerce</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='client_order_ref']" position="after">
+                <field name="bigcommerce_id" readonly="bigcommerce_synced"/>
+                <field name="bigcommerce_synced" invisible="1"/>
+                <field name="bigcommerce_last_sync" invisible="not bigcommerce_synced"/>
+                <field name="bigcommerce_config_id" invisible="not bigcommerce_synced"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
+

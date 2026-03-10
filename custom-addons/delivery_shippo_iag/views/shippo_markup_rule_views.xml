@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <record id="view_shippo_markup_rule_tree" model="ir.ui.view">
+    <field name="name">shippo.markup.rule.tree</field>
+    <field name="model">shippo.markup.rule</field>
+    <field name="arch" type="xml">
+      <list string="Markup Rules" editable="bottom">
+        <field name="delivery_carrier_id"/>
+        <field name="carrier"/>
+        <field name="service_level"/>
+        <field name="markup_type"/>
+        <field name="markup_value"/>
+      </list>
+    </field>
+  </record>
+</odoo>

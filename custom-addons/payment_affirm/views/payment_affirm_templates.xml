@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Affirm Redirect Form View -->
+    <!-- This form is rendered by Odoo's payment flow for redirect-based payments -->
+    <!-- The JavaScript intercepts this form and opens the Affirm modal instead -->
+    <record id="affirm_form" model="ir.ui.view">
+        <field name="name">affirm.redirect.form</field>
+        <field name="type">qweb</field>
+        <field name="arch" type="xml">
+            <form t-att-action="confirmation_url" method="get">
+                <input type="hidden" name="reference" t-att-value="reference"/>
+                
+                <!-- Affirm checkout data - read by JavaScript to open modal -->
+                <input type="hidden" name="affirm_data" id="affirm_checkout_data"
+                       t-att-data-public-key="public_api_key"
+                       t-att-data-js-url="js_url"
+                       t-att-data-merchant-name="merchant_name"
+                       t-att-data-amount="amount"
+                       t-att-data-currency="currency"
+                       t-att-data-tax-amount="tax_amount"
+                       t-att-data-shipping-amount="shipping_amount"
+                       t-att-data-confirmation-url="confirmation_url"
+                       t-att-data-cancel-url="cancel_url"
+                       t-att-data-reference="reference"
+                       t-att-data-partner-name="partner_name"
+                       t-att-data-partner-email="partner_email"
+                       t-att-data-partner-phone="partner_phone"
+                       t-att-data-partner-street="partner_street"
+                       t-att-data-partner-street2="partner_street2"
+                       t-att-data-partner-city="partner_city"
+                       t-att-data-partner-state="partner_state"
+                       t-att-data-partner-zip="partner_zip"
+                       t-att-data-partner-country="partner_country"
+                       t-att-data-line-items="line_items"/>
+            </form>
+        </field>
+    </record>
+
+</odoo>

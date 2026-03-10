@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_bigcommerce_inventory_sync_form" model="ir.ui.view">
+        <field name="name">bigcommerce.inventory.sync.form</field>
+        <field name="model">bigcommerce.inventory.sync</field>
+        <field name="arch" type="xml">
+            <form string="Inventory Sync">
+                <header>
+                    <button name="action_sync_inventory" string="Start Sync" type="object" class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_cancel_sync" string="Cancel" type="object" class="btn-danger" invisible="state != 'running'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,running,done"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="config_id"/>
+                            <field name="sync_date"/>
+                            <field name="sync_direction"/>
+                        </group>
+                        <group>
+                            <field name="products_synced"/>
+                            <field name="products_failed"/>
+                        </group>
+                    </group>
+                    <group string="Progress" invisible="state != 'running'">
+                        <field name="current_item" readonly="1" nolabel="1" placeholder="Waiting to start..."/>
+                        <field name="progress_percentage" widget="progressbar" invisible="not total_items"/>
+                        <group invisible="not total_items">
+                            <group>
+                                <label for="processed_items" string="Processed:"/>
+                                <field name="processed_items" readonly="1" nolabel="1"/>
+                                <span>/</span>
+                                <field name="total_items" readonly="1" nolabel="1"/>
+                            </group>
+                        </group>
+                    </group>
+                    <group string="Filters">
+                        <field name="date_from"/>
+                        <field name="date_to"/>
+                        <field name="min_date_modified"/>
+                    </group>
+                    <group string="Error Information" invisible="state != 'error'">
+                        <field name="error_message" nolabel="1" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_inventory_sync_list" model="ir.ui.view">
+        <field name="name">bigcommerce.inventory.sync.list</field>
+        <field name="model">bigcommerce.inventory.sync</field>
+        <field name="arch" type="xml">
+            <list string="Inventory Syncs">
+                <field name="name"/>
+                <field name="config_id"/>
+                <field name="sync_date"/>
+                <field name="sync_direction"/>
+                <field name="state"/>
+                <field name="products_synced"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="bigcommerce_connector.action_bigcommerce_inventory_sync" model="ir.actions.act_window">
+        <field name="name">Inventory Syncs</field>
+        <field name="res_model">bigcommerce.inventory.sync</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>
+

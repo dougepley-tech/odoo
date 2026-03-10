@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <!-- Delivery order form: Selected Delivery Service in main info (after Source Document); Get Shippo Rates in statusbar -->
+  <record id="view_picking_form_shippo" model="ir.ui.view">
+    <field name="name">stock.picking.form.shippo</field>
+    <field name="model">stock.picking</field>
+    <field name="inherit_id" ref="stock.view_picking_form"/>
+    <field name="arch" type="xml">
+      <!-- Selected Delivery Service in first group, after Source Document; hidden Shippo fields for button logic -->
+      <xpath expr="//field[@name='origin']" position="after">
+        <field name="shippo_selected_service" readonly="1" string="Selected Delivery Service"
+               invisible="not is_shippo_carrier"
+               placeholder="e.g. UPS Ground — from quotation or set when you generate the label"/>
+        <field name="shippo_tracking_url" invisible="1"/>
+        <field name="shippo_transaction_id" invisible="1"/>
+        <field name="shippo_origin_address_id" invisible="1"/>
+        <field name="shippo_rate_type" invisible="1"/>
+      </xpath>
+      <!-- Shippo buttons in form header: available on all pick and delivery orders -->
+      <xpath expr="//header" position="inside">
+        <button name="action_get_shippo_rates" string="Get Shippo Rates" type="object"
+                class="btn-primary"
+                invisible="state in ('done','cancel')"
+                title="Choose rate and generate label"/>
+        <button name="action_cancel_shippo_shipment" string="Refund Shipment" type="object"
+                class="btn-secondary"
+                invisible="not shippo_transaction_id"
+                title="Generate refund for this shipment"/>
+      </xpath>
+    </field>
+  </record>
+</odoo>

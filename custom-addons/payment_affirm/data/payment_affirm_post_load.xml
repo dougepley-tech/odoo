@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate=0 so this runs on every load/upgrade; post_init_hook only runs on first install -->
+    <data noupdate="0">
+        <function model="payment.provider" name="_payment_affirm_force_code"/>
+        <function model="payment.provider" name="_payment_affirm_set_module_id"/>
+        <function model="payment.provider" name="_payment_affirm_link_provider_to_method"/>
+    </data>
+</odoo>

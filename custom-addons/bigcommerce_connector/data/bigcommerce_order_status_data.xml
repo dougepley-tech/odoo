@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- BigCommerce Order Status Mappings -->
+    <record id="bc_order_status_0" model="bigcommerce.order.status">
+        <field name="bc_status_id">0</field>
+        <field name="name">Incomplete</field>
+        <field name="odoo_state">draft</field>
+    </record>
+    
+    <record id="bc_order_status_1" model="bigcommerce.order.status">
+        <field name="bc_status_id">1</field>
+        <field name="name">Pending</field>
+        <field name="odoo_state">draft</field>
+    </record>
+    
+    <record id="bc_order_status_7" model="bigcommerce.order.status">
+        <field name="bc_status_id">7</field>
+        <field name="name">Awaiting Payment</field>
+        <field name="odoo_state">draft</field>
+    </record>
+    
+    <record id="bc_order_status_11" model="bigcommerce.order.status">
+        <field name="bc_status_id">11</field>
+        <field name="name">Awaiting Fulfillment</field>
+        <field name="odoo_state">sale</field>
+    </record>
+    
+    <record id="bc_order_status_9" model="bigcommerce.order.status">
+        <field name="bc_status_id">9</field>
+        <field name="name">Awaiting Shipment</field>
+        <field name="odoo_state">sale</field>
+    </record>
+    
+    <record id="bc_order_status_8" model="bigcommerce.order.status">
+        <field name="bc_status_id">8</field>
+        <field name="name">Awaiting Pickup</field>
+        <field name="odoo_state">sale</field>
+    </record>
+    
+    <record id="bc_order_status_3" model="bigcommerce.order.status">
+        <field name="bc_status_id">3</field>
+        <field name="name">Partially Shipped</field>
+        <field name="odoo_state">sale</field>
+    </record>
+    
+    <record id="bc_order_status_10" model="bigcommerce.order.status">
+        <field name="bc_status_id">10</field>
+        <field name="name">Completed</field>
+        <field name="odoo_state">done</field>
+    </record>
+    
+    <record id="bc_order_status_2" model="bigcommerce.order.status">
+        <field name="bc_status_id">2</field>
+        <field name="name">Shipped</field>
+        <field name="odoo_state">done</field>
+    </record>
+    
+    <record id="bc_order_status_5" model="bigcommerce.order.status">
+        <field name="bc_status_id">5</field>
+        <field name="name">Cancelled</field>
+        <field name="odoo_state">cancel</field>
+    </record>
+    
+    <record id="bc_order_status_6" model="bigcommerce.order.status">
+        <field name="bc_status_id">6</field>
+        <field name="name">Declined</field>
+        <field name="odoo_state">cancel</field>
+    </record>
+    
+    <record id="bc_order_status_4" model="bigcommerce.order.status">
+        <field name="bc_status_id">4</field>
+        <field name="name">Refunded</field>
+        <field name="odoo_state">cancel</field>
+    </record>
+    
+    <record id="bc_order_status_13" model="bigcommerce.order.status">
+        <field name="bc_status_id">13</field>
+        <field name="name">Disputed</field>
+        <field name="odoo_state">draft</field>
+    </record>
+    
+    <record id="bc_order_status_12" model="bigcommerce.order.status">
+        <field name="bc_status_id">12</field>
+        <field name="name">Manual Verification Required</field>
+        <field name="odoo_state">draft</field>
+    </record>
+    
+    <record id="bc_order_status_14" model="bigcommerce.order.status">
+        <field name="bc_status_id">14</field>
+        <field name="name">Partially Refunded</field>
+        <field name="odoo_state">sale</field>
+    </record>
+</odoo>
+

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <record id="view_shippo_rate_wizard_form" model="ir.ui.view">
+    <field name="name">shippo.rate.wizard.form</field>
+    <field name="model">shippo.rate.wizard</field>
+    <field name="arch" type="xml">
+      <form string="Get Shippo Rates">
+        <group>
+          <group string="Origin &amp; Method">
+            <field name="origin_address_id"/>
+            <field name="delivery_carrier_id"/>
+            <field name="rate_type" help="Negotiated: uses your Shippo carrier accounts (per delivery method / origin). Published: retail rates. Rates can differ from Shippo's web UI if weight, dimensions, options, or carrier accounts differ."/>
+          </group>
+          <group string="Package">
+            <field name="pack_summary" invisible="not pack_summary" colspan="2" nolabel="1" class="oe_inline"/>
+            <field name="package_type_id" options="{'no_create': True}" context="{'formatted_display_name': True}" invisible="pack_summary or custom_package"/>
+            <field name="custom_package" invisible="pack_summary"/>
+            <field name="length" invisible="pack_summary or (not custom_package and package_type_id)"/>
+            <field name="width" invisible="pack_summary or (not custom_package and package_type_id)"/>
+            <field name="height" invisible="pack_summary or (not custom_package and package_type_id)"/>
+            <field name="weight" invisible="pack_summary"/>
+            <field name="distance_unit" invisible="pack_summary or (not custom_package and package_type_id)"/>
+            <field name="mass_unit" invisible="pack_summary"/>
+          </group>
+        </group>
+        <group string="Shipment Options">
+          <field name="insurance_amount" help="When set, Shippo returns rates that include the insurance cost. Shippo's web UI often shows the base rate and insurance separately; Odoo shows the combined amount, so numbers will match the web total (base + insurance), not the base alone."/>
+          <field name="is_residential"/>
+          <field name="signature_confirmation"/>
+        </group>
+        <field name="state" invisible="True"/>
+        <field name="picking_id" invisible="True"/>
+        <field name="order_id" invisible="True"/>
+        <field name="choose_carrier_wizard_id" invisible="True"/>
+        <notebook invisible="state != 'rates'">
+          <page string="Rates">
+            <field name="rate_line_ids">
+              <list string="Rates" create="0" delete="0" editable="bottom">
+                <field name="carrier" string="Provider"/>
+                <field name="service_name" string="Service Level"/>
+                <field name="estimated_days" string="Est. Days"/>
+                <field name="amount"/>
+                <field name="markup"/>
+                <field name="final_amount"/>
+                <field name="currency"/>
+                <field name="rate_object_id" column_invisible="True"/>
+                <button name="action_select_rate" string="Select Rate" type="object" class="btn-primary" icon="fa-check"/>
+              </list>
+            </field>
+            <group string="Selected rate">
+              <field name="selected_rate_id" options="{'no_create': True}" domain="[('wizard_id', '=', id)]" readonly="True"/>
+            </group>
+          </page>
+        </notebook>
+        <footer>
+          <button name="action_get_rates" string="Get Rates" type="object" class="btn-primary" invisible="state == 'rates'"/>
+          <button name="action_apply_estimate" string="Apply Estimate to Order" type="object" class="btn-primary"
+                  invisible="not order_id or state != 'rates' or not selected_rate_id"/>
+          <button name="action_generate_label" string="Generate Label" type="object" class="btn-primary"
+                  invisible="not picking_id or state != 'rates' or not selected_rate_id"/>
+          <button string="Cancel" class="btn-secondary" special="cancel"/>
+        </footer>
+      </form>
+    </field>
+  </record>
+</odoo>

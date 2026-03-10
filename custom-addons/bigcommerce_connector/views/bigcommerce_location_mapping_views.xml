@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_bigcommerce_location_mapping_form" model="ir.ui.view">
+        <field name="name">bigcommerce.location.mapping.form</field>
+        <field name="model">bigcommerce.location.mapping</field>
+        <field name="arch" type="xml">
+            <form string="Location Mapping">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="config_id"/>
+                            <field name="odoo_location_id"/>
+                            <field name="is_default"/>
+                        </group>
+                        <group>
+                            <field name="bc_location_id"/>
+                            <field name="bc_location_name"/>
+                            <field name="min_threshold"/>
+                            <field name="active"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_location_mapping_list" model="ir.ui.view">
+        <field name="name">bigcommerce.location.mapping.list</field>
+        <field name="model">bigcommerce.location.mapping</field>
+        <field name="arch" type="xml">
+            <list string="Location Mappings">
+                <field name="odoo_location_id"/>
+                <field name="bc_location_name"/>
+                <field name="is_default"/>
+                <field name="min_threshold"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_location_mapping_search" model="ir.ui.view">
+        <field name="name">bigcommerce.location.mapping.search</field>
+        <field name="model">bigcommerce.location.mapping</field>
+        <field name="arch" type="xml">
+            <search string="Location Mappings">
+                <field name="odoo_location_id"/>
+                <field name="bc_location_name"/>
+                <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+                <filter string="Default" name="default" domain="[('is_default', '=', True)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_bigcommerce_location_mapping" model="ir.actions.act_window">
+        <field name="name">Location Mappings</field>
+        <field name="res_model">bigcommerce.location.mapping</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create a location mapping
+            </p>
+            <p>
+                Map Odoo stock locations to BigCommerce locations for inventory sync. Only inventory from mapped locations will be synced to BigCommerce.
+            </p>
+        </field>
+    </record>
+</odoo>
+

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Deduplicate wizard form -->
+    <record id="view_bigcommerce_mapping_deduplicate_wizard_form" model="ir.ui.view">
+        <field name="name">bigcommerce.mapping.deduplicate.wizard.form</field>
+        <field name="model">bigcommerce.mapping.deduplicate.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Deduplicate Product Mappings">
+                <field name="state" invisible="1"/>
+                <group invisible="state != 'draft'">
+                    <group>
+                        <p colspan="2" class="text-muted">
+                            Find duplicate product and variant mappings: (Configuration, BigCommerce Product/Variant ID) pairs that have more than one Odoo product or variant mapped.
+                            Choose which product or variant to keep for each pair; duplicates will be archived (products) or have their mapping removed (variants).
+                        </p>
+                        <button name="action_find_duplicates" string="Find Duplicates" type="object" class="btn-primary" colspan="2"/>
+                    </group>
+                </group>
+                <group invisible="state != 'ready'">
+                    <group>
+                        <field name="duplicate_count" readonly="1"/>
+                        <field name="line_count" readonly="1"/>
+                        <field name="variant_duplicate_count" readonly="1"/>
+                        <field name="variant_line_count" readonly="1"/>
+                        <button name="action_deduplicate" string="Remove Duplicate Mappings" type="object" class="btn-danger" colspan="2"/>
+                    </group>
+                </group>
+                <group invisible="state != 'done'">
+                    <field name="result_message" readonly="1" nolabel="1"/>
+                    <button string="Close" class="btn-secondary" special="cancel" colspan="2"/>
+                </group>
+                <group invisible="state != 'ready'">
+                    <field name="line_ids" nolabel="1" readonly="0">
+                        <list string="Duplicate product mappings" create="0" delete="0" decoration-success="keep_this">
+                            <button name="action_open_product" type="object" icon="fa-external-link" string="View Product" title="Open product form to see full details (BOM, etc.)"/>
+                            <field name="config_id"/>
+                            <field name="bigcommerce_id"/>
+                            <field name="product_name"/>
+                            <field name="default_code" string="Internal Ref"/>
+                            <field name="bom_count" string="Has BOM" optional="show"/>
+                            <field name="used_in_bom_count" string="Used in BOMs" optional="show"/>
+                            <field name="keep_this" widget="boolean_toggle"/>
+                        </list>
+                    </field>
+                    <field name="variant_line_ids" nolabel="1" readonly="0">
+                        <list string="Duplicate variant mappings" create="0" delete="0" decoration-success="keep_this">
+                            <button name="action_open_variant" type="object" icon="fa-external-link" string="View Product" title="Open product form to see variant in context"/>
+                            <field name="config_id"/>
+                            <field name="bigcommerce_variant_id"/>
+                            <field name="variant_name"/>
+                            <field name="default_code" string="SKU / Internal Ref"/>
+                            <field name="keep_this" widget="boolean_toggle"/>
+                        </list>
+                    </field>
+                </group>
+                <footer>
+                    <button name="action_find_duplicates" string="Find Duplicates" type="object" class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_deduplicate" string="Remove Duplicate Mappings" type="object" class="btn-danger" invisible="state != 'ready'"/>
+                    <button string="Close" class="btn-secondary" special="cancel" invisible="state != 'done'"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action to open wizard in main window (so View Product opens in main window and Back returns to list) -->
+    <record id="action_bigcommerce_mapping_deduplicate_wizard" model="ir.actions.act_window">
+        <field name="name">Deduplicate Product Mappings</field>
+        <field name="res_model">bigcommerce.mapping.deduplicate.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">current</field>
+        <field name="binding_model_id" ref="model_bigcommerce_product_mapping"/>
+    </record>
+
+    <!-- Same action bound to product.template so it appears in Actions on BigCommerce Products list -->
+    <record id="action_bigcommerce_mapping_deduplicate_wizard_from_products" model="ir.actions.act_window">
+        <field name="name">Deduplicate Product Mappings</field>
+        <field name="res_model">bigcommerce.mapping.deduplicate.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">current</field>
+        <field name="binding_model_id" ref="product.model_product_template"/>
+    </record>
+</odoo>

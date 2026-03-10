@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_bigcommerce_dashboard_kanban" model="ir.ui.view">
+        <field name="name">bigcommerce.dashboard.kanban</field>
+        <field name="model">bigcommerce.dashboard</field>
+        <field name="arch" type="xml">
+            <kanban class="o_kanban_dashboard" create="0">
+                <field name="config_id"/>
+                <field name="last_product_sync"/>
+                <field name="last_order_sync"/>
+                <field name="last_inventory_sync"/>
+                <field name="last_customer_sync"/>
+                <field name="last_fulfillment_sync"/>
+                <field name="last_product_sync_total"/>
+                <field name="last_product_sync_updated"/>
+                <field name="last_product_sync_failed"/>
+                <field name="last_product_sync_warnings"/>
+                <field name="last_order_sync_total"/>
+                <field name="last_order_sync_updated"/>
+                <field name="last_order_sync_failed"/>
+                <field name="last_order_sync_warnings"/>
+                <field name="last_inventory_sync_total"/>
+                <field name="last_inventory_sync_updated"/>
+                <field name="last_inventory_sync_failed"/>
+                <field name="last_inventory_sync_warnings"/>
+                <field name="last_customer_sync_total"/>
+                <field name="last_customer_sync_updated"/>
+                <field name="last_customer_sync_failed"/>
+                <field name="last_customer_sync_warnings"/>
+                <field name="last_fulfillment_sync_total"/>
+                <field name="last_fulfillment_sync_updated"/>
+                <field name="last_fulfillment_sync_failed"/>
+                <field name="last_fulfillment_sync_warnings"/>
+                <field name="running_sync_ids"/>
+                <field name="has_running_syncs"/>
+                <field name="running_sync_count"/>
+                <field name="running_sync_display"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="oe_kanban_card oe_kanban_global_click">
+                            <div class="o_kanban_card_header">
+                                <div class="o_kanban_card_header_title">
+                                    <div class="o_primary">
+                                        <field name="config_id" widget="many2one_avatar"/>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="o_kanban_card_content">
+                                <div class="row">
+                                    <div class="col-12 mb-3">
+                                        <h4><field name="config_id"/></h4>
+                                    </div>
+                                    
+                                    <!-- Running Sync Operations Section -->
+                                    <t t-if="record.has_running_syncs.raw_value">
+                                        <div class="col-12 mb-3 border-top pt-2">
+                                            <div class="alert alert-info mb-2" style="padding: 10px; margin-bottom: 8px !important;">
+                                                <div class="d-flex align-items-center justify-content-between">
+                                                    <strong>
+                                                        <i class="fa fa-sync fa-spin mr-2"></i>
+                                                        Sync In Progress
+                                                    </strong>
+                                                    <span class="badge badge-light">
+                                                        <field name="running_sync_count"/> Active
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div class="mb-2">
+                                                <field name="running_sync_display" widget="html"/>
+                                            </div>
+                                            <div class="text-right">
+                                                <button name="action_view_running_syncs" type="object" class="btn btn-sm btn-primary">
+                                                    <i class="fa fa-external-link mr-1"></i>View Details
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </t>
+                                    
+                                    <div class="col-12 mb-3">
+                                        <strong>Products Sync</strong>
+                                        <div class="ml-2">
+                                            <div class="mb-1">
+                                                <span class="text-muted">Last Sync:</span>
+                                                <span t-if="record.last_product_sync.raw_value"><field name="last_product_sync"/></span>
+                                                <span t-if="!record.last_product_sync.raw_value" class="text-muted">Never</span>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Total:</span> <field name="last_product_sync_total"/>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Updated:</span> <field name="last_product_sync_updated"/>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Failed:</span> <span class="text-danger"><field name="last_product_sync_failed"/></span>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Warnings:</span> <span class="text-warning"><field name="last_product_sync_warnings"/></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="col-12 mb-3">
+                                        <strong>Orders Sync</strong>
+                                        <div class="ml-2">
+                                            <div class="mb-1">
+                                                <span class="text-muted">Last Sync:</span>
+                                                <span t-if="record.last_order_sync.raw_value"><field name="last_order_sync"/></span>
+                                                <span t-if="!record.last_order_sync.raw_value" class="text-muted">Never</span>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Total:</span> <field name="last_order_sync_total"/>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Updated:</span> <field name="last_order_sync_updated"/>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Failed:</span> <span class="text-danger"><field name="last_order_sync_failed"/></span>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Warnings:</span> <span class="text-warning"><field name="last_order_sync_warnings"/></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="col-12 mb-3">
+                                        <strong>Inventory Sync</strong>
+                                        <div class="ml-2">
+                                            <div class="mb-1">
+                                                <span class="text-muted">Last Sync:</span>
+                                                <span t-if="record.last_inventory_sync.raw_value"><field name="last_inventory_sync"/></span>
+                                                <span t-if="!record.last_inventory_sync.raw_value" class="text-muted">Never</span>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Total:</span> <field name="last_inventory_sync_total"/>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Updated:</span> <field name="last_inventory_sync_updated"/>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Failed:</span> <span class="text-danger"><field name="last_inventory_sync_failed"/></span>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Warnings:</span> <span class="text-warning"><field name="last_inventory_sync_warnings"/></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="col-12 mb-3">
+                                        <strong>Customers Sync</strong>
+                                        <div class="ml-2">
+                                            <div class="mb-1">
+                                                <span class="text-muted">Last Sync:</span>
+                                                <span t-if="record.last_customer_sync.raw_value"><field name="last_customer_sync"/></span>
+                                                <span t-if="!record.last_customer_sync.raw_value" class="text-muted">Never</span>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Total:</span> <field name="last_customer_sync_total"/>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Updated:</span> <field name="last_customer_sync_updated"/>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Failed:</span> <span class="text-danger"><field name="last_customer_sync_failed"/></span>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Warnings:</span> <span class="text-warning"><field name="last_customer_sync_warnings"/></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="col-12 mb-3">
+                                        <strong>Fulfillments Sync</strong>
+                                        <div class="ml-2">
+                                            <div class="mb-1">
+                                                <span class="text-muted">Last Sync:</span>
+                                                <span t-if="record.last_fulfillment_sync.raw_value"><field name="last_fulfillment_sync"/></span>
+                                                <span t-if="!record.last_fulfillment_sync.raw_value" class="text-muted">Never</span>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Total:</span> <field name="last_fulfillment_sync_total"/>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Updated:</span> <field name="last_fulfillment_sync_updated"/>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Failed:</span> <span class="text-danger"><field name="last_fulfillment_sync_failed"/></span>
+                                                </div>
+                                                <div class="col-6 mb-1">
+                                                    <span class="text-muted">Warnings:</span> <span class="text-warning"><field name="last_fulfillment_sync_warnings"/></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_dashboard_form" model="ir.ui.view">
+        <field name="name">bigcommerce.dashboard.form</field>
+        <field name="model">bigcommerce.dashboard</field>
+        <field name="arch" type="xml">
+            <form string="BigCommerce Dashboard">
+                <header>
+                    <button name="action_open_config" string="Open Configuration" type="object" class="btn-primary"/>
+                </header>
+                <sheet>
+                    <field name="has_running_syncs" invisible="1"/>
+                    <field name="running_sync_display" invisible="1"/>
+                    
+                    <div class="oe_title">
+                        <h1>
+                            <field name="config_id" readonly="1"/>
+                        </h1>
+                    </div>
+                    
+                    <!-- Running Sync Operations Alert -->
+                    <div class="alert alert-info" invisible="not has_running_syncs">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <h4 class="mb-0">
+                                <i class="fa fa-sync fa-spin mr-2"></i>
+                                Sync Operations In Progress
+                            </h4>
+                            <button name="action_view_running_syncs" type="object" class="btn btn-primary">
+                                View Running Syncs
+                            </button>
+                        </div>
+                        <field name="running_sync_display" widget="html" nolabel="1"/>
+                    </div>
+                    
+                    <group>
+                        <group string="Last Sync Times">
+                            <field name="last_product_sync"/>
+                            <field name="last_order_sync"/>
+                            <field name="last_inventory_sync"/>
+                            <field name="last_customer_sync"/>
+                            <field name="last_fulfillment_sync"/>
+                        </group>
+                        <group string="Last Product Sync Statistics">
+                            <field name="last_product_sync_total"/>
+                            <field name="last_product_sync_updated"/>
+                            <field name="last_product_sync_failed"/>
+                            <field name="last_product_sync_warnings"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Last Order Sync Statistics">
+                            <field name="last_order_sync_total"/>
+                            <field name="last_order_sync_updated"/>
+                            <field name="last_order_sync_failed"/>
+                            <field name="last_order_sync_warnings"/>
+                        </group>
+                        <group string="Last Inventory Sync Statistics">
+                            <field name="last_inventory_sync_total"/>
+                            <field name="last_inventory_sync_updated"/>
+                            <field name="last_inventory_sync_failed"/>
+                            <field name="last_inventory_sync_warnings"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Last Customer Sync Statistics">
+                            <field name="last_customer_sync_total"/>
+                            <field name="last_customer_sync_updated"/>
+                            <field name="last_customer_sync_failed"/>
+                            <field name="last_customer_sync_warnings"/>
+                        </group>
+                        <group string="Last Fulfillment Sync Statistics">
+                            <field name="last_fulfillment_sync_total"/>
+                            <field name="last_fulfillment_sync_updated"/>
+                            <field name="last_fulfillment_sync_failed"/>
+                            <field name="last_fulfillment_sync_warnings"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="bigcommerce_connector.action_bigcommerce_dashboard" model="ir.actions.act_window">
+        <field name="name">BigCommerce Dashboard</field>
+        <field name="res_model">bigcommerce.dashboard</field>
+        <field name="view_mode">kanban,form</field>
+        <field name="target">current</field>
+        <field name="context">{}</field>
+        <field name="domain">[]</field>
+        <field name="binding_model_id" ref="bigcommerce_connector.model_bigcommerce_dashboard"/>
+    </record>
+    
+    <record id="action_server_initialize_dashboards" model="ir.actions.server">
+        <field name="name">Initialize Dashboard Records</field>
+        <field name="model_id" ref="bigcommerce_connector.model_bigcommerce_dashboard"/>
+        <field name="binding_model_id" ref="bigcommerce_connector.model_bigcommerce_dashboard"/>
+        <field name="state">code</field>
+        <field name="code">action = env['bigcommerce.dashboard'].action_initialize_dashboards()</field>
+    </record>
+    
+    <record id="action_initialize_dashboards" model="ir.actions.server">
+        <field name="name">Initialize Dashboard Records</field>
+        <field name="model_id" ref="bigcommerce_connector.model_bigcommerce_dashboard"/>
+        <field name="binding_model_id" ref="bigcommerce_connector.model_bigcommerce_dashboard"/>
+        <field name="state">code</field>
+        <field name="code">action = env['bigcommerce.dashboard'].action_initialize_dashboards()</field>
+    </record>
+</odoo>

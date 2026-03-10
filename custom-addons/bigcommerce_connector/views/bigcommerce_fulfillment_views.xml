@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_bigcommerce_fulfillment_sync_form" model="ir.ui.view">
+        <field name="name">bigcommerce.fulfillment.sync.form</field>
+        <field name="model">bigcommerce.fulfillment.sync</field>
+        <field name="arch" type="xml">
+            <form string="Fulfillment Sync">
+                <header>
+                    <button name="action_sync_fulfillments" string="Start Sync" type="object" class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_cancel_sync" string="Cancel" type="object" class="btn-danger" invisible="state != 'running'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,running,done"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="config_id"/>
+                            <field name="sync_date"/>
+                        </group>
+                        <group>
+                            <field name="fulfillments_exported"/>
+                            <field name="fulfillments_failed"/>
+                        </group>
+                    </group>
+                    <group string="Progress" invisible="state != 'running'">
+                        <field name="current_item" readonly="1" nolabel="1" placeholder="Waiting to start..."/>
+                        <field name="progress_percentage" widget="progressbar" invisible="not total_items"/>
+                        <group invisible="not total_items">
+                            <group>
+                                <label for="processed_items" string="Processed:"/>
+                                <field name="processed_items" readonly="1" nolabel="1"/>
+                                <span>/</span>
+                                <field name="total_items" readonly="1" nolabel="1"/>
+                            </group>
+                        </group>
+                    </group>
+                    <group string="Options">
+                        <field name="update_order_status"/>
+                    </group>
+                    <group string="Filters">
+                        <field name="date_from"/>
+                        <field name="date_to"/>
+                        <field name="min_date_modified"/>
+                    </group>
+                    <group string="Error Information" invisible="state != 'error'">
+                        <field name="error_message" nolabel="1" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_fulfillment_sync_list" model="ir.ui.view">
+        <field name="name">bigcommerce.fulfillment.sync.list</field>
+        <field name="model">bigcommerce.fulfillment.sync</field>
+        <field name="arch" type="xml">
+            <list string="Fulfillment Syncs">
+                <field name="name"/>
+                <field name="config_id"/>
+                <field name="sync_date"/>
+                <field name="state"/>
+                <field name="fulfillments_exported"/>
+                <field name="fulfillments_failed"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_fulfillment_sync_search" model="ir.ui.view">
+        <field name="name">bigcommerce.fulfillment.sync.search</field>
+        <field name="model">bigcommerce.fulfillment.sync</field>
+        <field name="arch" type="xml">
+            <search string="Fulfillment Syncs">
+                <field name="name"/>
+                <field name="config_id"/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
+                <filter string="Done" name="done" domain="[('state', '=', 'done')]"/>
+                <filter string="Error" name="error" domain="[('state', '=', 'error')]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="bigcommerce_connector.action_bigcommerce_fulfillment_sync" model="ir.actions.act_window">
+        <field name="name">Fulfillment Syncs</field>
+        <field name="res_model">bigcommerce.fulfillment.sync</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first fulfillment sync!
+            </p>
+            <p>
+                Export shipment tracking and fulfillment status from Odoo to BigCommerce.
+            </p>
+        </field>
+    </record>
+
+    <!-- Extend stock picking view -->
+    <record id="stock_picking_form_view_inherit_bigcommerce" model="ir.ui.view">
+        <field name="name">stock.picking.form.bigcommerce</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.view_picking_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='name']" position="after">
+                <field name="bigcommerce_shipment_id" readonly="bigcommerce_synced" invisible="not bigcommerce_shipment_id"/>
+                <field name="bigcommerce_synced" invisible="1"/>
+                <field name="bigcommerce_last_sync" invisible="not bigcommerce_synced"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
+

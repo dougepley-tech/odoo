@@ -1,0 +1,15 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_shippo_origin_address_user,shippo.origin.address.user,model_shippo_origin_address,stock.group_stock_user,1,0,0,0
+access_shippo_origin_address_manager,shippo.origin.address.manager,model_shippo_origin_address,stock.group_stock_manager,1,1,1,1
+access_shippo_carrier_account_user,shippo.carrier.account.user,model_shippo_carrier_account,stock.group_stock_user,1,0,0,0
+access_shippo_carrier_account_manager,shippo.carrier.account.manager,model_shippo_carrier_account,stock.group_stock_manager,1,1,1,1
+access_shippo_origin_carrier_mapping_user,shippo.origin.carrier.mapping.user,model_shippo_origin_carrier_mapping,stock.group_stock_user,1,0,0,0
+access_shippo_origin_carrier_mapping_manager,shippo.origin.carrier.mapping.manager,model_shippo_origin_carrier_mapping,stock.group_stock_manager,1,1,1,1
+access_shippo_package_template_user,shippo.package.template.user,model_shippo_package_template,stock.group_stock_user,1,0,0,0
+access_shippo_package_template_manager,shippo.package.template.manager,model_shippo_package_template,stock.group_stock_manager,1,1,1,1
+access_shippo_markup_rule_user,shippo.markup.rule.user,model_shippo_markup_rule,stock.group_stock_user,1,0,0,0
+access_shippo_markup_rule_manager,shippo.markup.rule.manager,model_shippo_markup_rule,stock.group_stock_manager,1,1,1,1
+access_shippo_rate_wizard_user,shippo.rate.wizard.user,model_shippo_rate_wizard,stock.group_stock_user,1,1,1,1
+access_shippo_rate_wizard_line_user,shippo.rate.wizard.line.user,model_shippo_rate_wizard_line,stock.group_stock_user,1,1,1,1
+access_shippo_cancel_shipment_wizard_user,shippo.cancel.shipment.wizard.user,model_shippo_cancel_shipment_wizard,stock.group_stock_user,1,1,1,1
+access_shippo_settings_wizard_user,shippo.settings.wizard.user,model_shippo_settings_wizard,stock.group_stock_manager,1,1,1,1

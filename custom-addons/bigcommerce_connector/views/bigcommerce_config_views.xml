@@ -1,0 +1,408 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_bigcommerce_config_form" model="ir.ui.view">
+        <field name="name">bigcommerce.config.form</field>
+        <field name="model">bigcommerce.config</field>
+        <field name="arch" type="xml">
+            <form string="BigCommerce Configuration">
+                <header>
+                    <button name="test_connection" string="Test Connection" type="object" class="btn-primary"/>
+                    <field name="active" widget="boolean_toggle"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="store_hash" password="True"/>
+                            <field name="access_token" password="True"/>
+                            <field name="api_version"/>
+                        </group>
+                        <group>
+                            <field name="company_id" options="{'no_create': True}"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Sync Settings">
+                            <group>
+                                <group string="Auto Sync Products">
+                                    <field name="auto_sync_products"/>
+                                    <field name="auto_sync_products_frequency" invisible="not auto_sync_products"/>
+                                    <field name="auto_sync_products_interval_number" invisible="not auto_sync_products or auto_sync_products_frequency == 'minute'"/>
+                                    <field name="auto_sync_products_minute_interval" invisible="not auto_sync_products or auto_sync_products_frequency != 'minute'"/>
+                                    <label for="auto_sync_products_time_hour" string="Time of Day" invisible="not auto_sync_products or (auto_sync_products_frequency != 'daily' and auto_sync_products_frequency != 'weekly' and auto_sync_products_frequency != 'monthly' and auto_sync_products_frequency != 'annually')"/>
+                                    <div invisible="not auto_sync_products or (auto_sync_products_frequency != 'daily' and auto_sync_products_frequency != 'weekly' and auto_sync_products_frequency != 'monthly' and auto_sync_products_frequency != 'annually')" class="d-flex align-items-center gap-2">
+                                        <field name="auto_sync_products_time_hour" nolabel="1" class="o_time_field_hour flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        <span class="o_time_separator">:</span>
+                                        <field name="auto_sync_products_time_minute" nolabel="1" class="o_time_field_minute flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        <field name="auto_sync_products_time_period" nolabel="1" class="o_time_field_period flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                    </div>
+                                    <field name="auto_sync_products_time_of_day" invisible="1"/>
+                                    <field name="auto_sync_products_day_of_week" invisible="not auto_sync_products or auto_sync_products_frequency != 'weekly'"/>
+                                    <field name="auto_sync_products_day_of_month" invisible="not auto_sync_products or (auto_sync_products_frequency != 'monthly' and auto_sync_products_frequency != 'annually')"/>
+                                    <field name="auto_sync_products_month" invisible="not auto_sync_products or auto_sync_products_frequency != 'annually'"/>
+                                    <field name="last_product_sync" readonly="1" invisible="not auto_sync_products"/>
+                                </group>
+                                <group string="Auto Sync Orders">
+                                    <field name="auto_sync_orders"/>
+                                    <field name="auto_sync_orders_frequency" invisible="not auto_sync_orders"/>
+                                    <field name="auto_sync_orders_interval_number" invisible="not auto_sync_orders or auto_sync_orders_frequency == 'minute'"/>
+                                    <field name="auto_sync_orders_minute_interval" invisible="not auto_sync_orders or auto_sync_orders_frequency != 'minute'"/>
+                                    <label for="auto_sync_orders_time_hour" string="Time of Day" invisible="not auto_sync_orders or (auto_sync_orders_frequency != 'daily' and auto_sync_orders_frequency != 'weekly' and auto_sync_orders_frequency != 'monthly' and auto_sync_orders_frequency != 'annually')"/>
+                                    <div invisible="not auto_sync_orders or (auto_sync_orders_frequency != 'daily' and auto_sync_orders_frequency != 'weekly' and auto_sync_orders_frequency != 'monthly' and auto_sync_orders_frequency != 'annually')" class="d-flex align-items-center gap-2">
+                                        <field name="auto_sync_orders_time_hour" nolabel="1" class="o_time_field_hour flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        <span class="o_time_separator">:</span>
+                                        <field name="auto_sync_orders_time_minute" nolabel="1" class="o_time_field_minute flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        <field name="auto_sync_orders_time_period" nolabel="1" class="o_time_field_period flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                    </div>
+                                    <field name="auto_sync_orders_time_of_day" invisible="1"/>
+                                    <field name="auto_sync_orders_day_of_week" invisible="not auto_sync_orders or auto_sync_orders_frequency != 'weekly'"/>
+                                    <field name="auto_sync_orders_day_of_month" invisible="not auto_sync_orders or (auto_sync_orders_frequency != 'monthly' and auto_sync_orders_frequency != 'annually')"/>
+                                    <field name="auto_sync_orders_month" invisible="not auto_sync_orders or auto_sync_orders_frequency != 'annually'"/>
+                                    <field name="last_order_sync" readonly="1" invisible="not auto_sync_orders"/>
+                                </group>
+                                <group string="Auto Sync Inventory">
+                                    <field name="auto_sync_inventory"/>
+                                    <field name="auto_sync_inventory_frequency" invisible="not auto_sync_inventory"/>
+                                    <field name="auto_sync_inventory_interval_number" invisible="not auto_sync_inventory or auto_sync_inventory_frequency == 'minute'"/>
+                                    <field name="auto_sync_inventory_minute_interval" invisible="not auto_sync_inventory or auto_sync_inventory_frequency != 'minute'"/>
+                                    <label for="auto_sync_inventory_time_hour" string="Time of Day" invisible="not auto_sync_inventory or (auto_sync_inventory_frequency != 'daily' and auto_sync_inventory_frequency != 'weekly' and auto_sync_inventory_frequency != 'monthly' and auto_sync_inventory_frequency != 'annually')"/>
+                                    <div invisible="not auto_sync_inventory or (auto_sync_inventory_frequency != 'daily' and auto_sync_inventory_frequency != 'weekly' and auto_sync_inventory_frequency != 'monthly' and auto_sync_inventory_frequency != 'annually')" class="d-flex align-items-center gap-2">
+                                        <field name="auto_sync_inventory_time_hour" nolabel="1" class="o_time_field_hour flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        <span class="o_time_separator">:</span>
+                                        <field name="auto_sync_inventory_time_minute" nolabel="1" class="o_time_field_minute flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        <field name="auto_sync_inventory_time_period" nolabel="1" class="o_time_field_period flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                    </div>
+                                    <field name="auto_sync_inventory_time_of_day" invisible="1"/>
+                                    <field name="auto_sync_inventory_day_of_week" invisible="not auto_sync_inventory or auto_sync_inventory_frequency != 'weekly'"/>
+                                    <field name="auto_sync_inventory_day_of_month" invisible="not auto_sync_inventory or (auto_sync_inventory_frequency != 'monthly' and auto_sync_inventory_frequency != 'annually')"/>
+                                    <field name="auto_sync_inventory_month" invisible="not auto_sync_inventory or auto_sync_inventory_frequency != 'annually'"/>
+                                    <field name="last_inventory_sync" readonly="1" invisible="not auto_sync_inventory"/>
+                                </group>
+                                <group string="Auto Sync Customers">
+                                    <field name="auto_sync_customers"/>
+                                    <field name="auto_sync_customers_frequency" invisible="not auto_sync_customers"/>
+                                    <field name="auto_sync_customers_interval_number" invisible="not auto_sync_customers or auto_sync_customers_frequency == 'minute'"/>
+                                    <field name="auto_sync_customers_minute_interval" invisible="not auto_sync_customers or auto_sync_customers_frequency != 'minute'"/>
+                                    <label for="auto_sync_customers_time_hour" string="Time of Day" invisible="not auto_sync_customers or (auto_sync_customers_frequency != 'daily' and auto_sync_customers_frequency != 'weekly' and auto_sync_customers_frequency != 'monthly' and auto_sync_customers_frequency != 'annually')"/>
+                                    <div invisible="not auto_sync_customers or (auto_sync_customers_frequency != 'daily' and auto_sync_customers_frequency != 'weekly' and auto_sync_customers_frequency != 'monthly' and auto_sync_customers_frequency != 'annually')" class="d-flex align-items-center gap-2">
+                                        <field name="auto_sync_customers_time_hour" nolabel="1" class="o_time_field_hour flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        <span class="o_time_separator">:</span>
+                                        <field name="auto_sync_customers_time_minute" nolabel="1" class="o_time_field_minute flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        <field name="auto_sync_customers_time_period" nolabel="1" class="o_time_field_period flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                    </div>
+                                    <field name="auto_sync_customers_time_of_day" invisible="1"/>
+                                    <field name="auto_sync_customers_day_of_week" invisible="not auto_sync_customers or auto_sync_customers_frequency != 'weekly'"/>
+                                    <field name="auto_sync_customers_day_of_month" invisible="not auto_sync_customers or (auto_sync_customers_frequency != 'monthly' and auto_sync_customers_frequency != 'annually')"/>
+                                    <field name="auto_sync_customers_month" invisible="not auto_sync_customers or auto_sync_customers_frequency != 'annually'"/>
+                                    <field name="last_customer_sync" readonly="1" invisible="not auto_sync_customers"/>
+                                </group>
+                                <group string="Auto Sync Fulfillments">
+                                    <field name="auto_sync_fulfillments"/>
+                                    <field name="auto_sync_fulfillments_frequency" invisible="not auto_sync_fulfillments"/>
+                                    <field name="auto_sync_fulfillments_interval_number" invisible="not auto_sync_fulfillments or auto_sync_fulfillments_frequency == 'minute'"/>
+                                    <field name="auto_sync_fulfillments_minute_interval" invisible="not auto_sync_fulfillments or auto_sync_fulfillments_frequency != 'minute'"/>
+                                    <label for="auto_sync_fulfillments_time_hour" string="Time of Day" invisible="not auto_sync_fulfillments or (auto_sync_fulfillments_frequency != 'daily' and auto_sync_fulfillments_frequency != 'weekly' and auto_sync_fulfillments_frequency != 'monthly' and auto_sync_fulfillments_frequency != 'annually')"/>
+                                    <div invisible="not auto_sync_fulfillments or (auto_sync_fulfillments_frequency != 'daily' and auto_sync_fulfillments_frequency != 'weekly' and auto_sync_fulfillments_frequency != 'monthly' and auto_sync_fulfillments_frequency != 'annually')" class="d-flex align-items-center gap-2">
+                                        <field name="auto_sync_fulfillments_time_hour" nolabel="1" class="o_time_field_hour flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        <span class="o_time_separator">:</span>
+                                        <field name="auto_sync_fulfillments_time_minute" nolabel="1" class="o_time_field_minute flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                        <field name="auto_sync_fulfillments_time_period" nolabel="1" class="o_time_field_period flex-grow-0" options="{'no_create': True, 'no_create_edit': True}"/>
+                                    </div>
+                                    <field name="auto_sync_fulfillments_time_of_day" invisible="1"/>
+                                    <field name="auto_sync_fulfillments_day_of_week" invisible="not auto_sync_fulfillments or auto_sync_fulfillments_frequency != 'weekly'"/>
+                                    <field name="auto_sync_fulfillments_day_of_month" invisible="not auto_sync_fulfillments or (auto_sync_fulfillments_frequency != 'monthly' and auto_sync_fulfillments_frequency != 'annually')"/>
+                                    <field name="auto_sync_fulfillments_month" invisible="not auto_sync_fulfillments or auto_sync_fulfillments_frequency != 'annually'"/>
+                                    <field name="last_fulfillment_sync" readonly="1" invisible="not auto_sync_fulfillments"/>
+                                </group>
+                                <group string="Failure notification recipients">
+                                    <field name="sync_failure_notification_emails" placeholder="email1@example.com, email2@example.com"/>
+                                    <field name="sync_failure_notification_partner_ids" widget="many2many_tags" options="{'no_create': False}" placeholder="Or add contacts to notify when an auto sync fails..."/>
+                                </group>
+                                <group string="Sync Direction">
+                                    <field name="sync_direction_products"/>
+                                    <field name="sync_direction_orders"/>
+                                    <field name="sync_direction_inventory"/>
+                                    <field name="sync_direction_customers"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Order Import Settings">
+                            <group>
+                                <group string="General Order Settings">
+                                    <field name="confirm_sale_orders"/>
+                                    <field name="import_order_without_status"/>
+                                    <field name="default_customer_enabled"/>
+                                    <field name="default_customer_id" invisible="not default_customer_enabled"/>
+                                    <field name="order_status_update"/>
+                                    <field name="default_sales_team_id"/>
+                                </group>
+                                <group string="Order Status Filtering">
+                                    <field name="sync_order_status_ids" widget="many2many_tags" 
+                                           options="{'no_create': True}"
+                                           placeholder="Select order statuses to sync. Leave empty to sync all orders."
+                                           help="Only orders with selected statuses will be synced from BigCommerce."/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="Invoicing, Payment &amp; Transactions">
+                                    <field name="create_invoices"/>
+                                    <field name="register_payment_on_import" invisible="not create_invoices"/>
+                                    <field name="import_bc_transactions"/>
+                                    <field name="import_payments"/>
+                                </group>
+                                <group string="Order Shipment &amp; Stock Configuration">
+                                    <field name="order_warehouse_id" string="Sales Order Delivery Warehouse"
+                                           placeholder="Warehouse for imported orders (Other Info &gt; Delivery)"
+                                           domain="[('company_id', 'in', [company_id, False])]"
+                                           help="Sets the Warehouse field on sale orders (Other Info tab, Delivery section)."/>
+                                    <field name="create_shipment"/>
+                                    <field name="import_shipment_details"/>
+                                    <field name="import_shipment_status_ids" widget="many2many_tags"
+                                           invisible="not import_shipment_details"
+                                           options="{'no_create': True}"
+                                           placeholder="Select order statuses for shipment import"
+                                           help="Only selected order status orders will have shipment details imported."/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="Order Configuration">
+                                    <field name="order_number_prefix"/>
+                                    <field name="import_taxes"/>
+                                </group>
+                                <group string="Tax &amp; Shipping Products">
+                                    <field name="tax_product_id"/>
+                                    <field name="delivery_carrier_id" string="Delivery Method"
+                                           options="{'no_create': True}"
+                                           help="Odoo delivery method for imported orders. BC shipping method (e.g. UPS Ground) appears as the line description below the shipping product."/>
+                                    <field name="delivery_carrier_wholesale_id" string="Delivery Method (Wholesale)"
+                                           options="{'no_create': True}"
+                                           help="When the BigCommerce shipping method name ends with *, use this carrier (e.g. Shippo Wholesale) instead of Delivery Method for the order and shipping line."/>
+                                    <field name="shipping_product_id" invisible="1"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Tax Mapping">
+                            <group>
+                                <field name="state_tax_mapping_ids" nolabel="1">
+                                    <list>
+                                        <field name="state_code"/>
+                                        <field name="state_name"/>
+                                        <field name="tax_product_id"/>
+                                    </list>
+                                </field>
+                            </group>
+                        </page>
+                        <page string="Carrier Mapping">
+                            <group>
+                                <field name="carrier_mapping_ids" nolabel="1">
+                                    <list>
+                                        <field name="odoo_carrier_id"/>
+                                        <field name="bc_carrier_code"/>
+                                        <field name="priority"/>
+                                    </list>
+                                </field>
+                            </group>
+                        </page>
+                        <page string="Product Settings">
+                            <group>
+                                <group>
+                                    <field name="product_default_category"/>
+                                    <field name="product_default_uom"/>
+                                </group>
+                                <group>
+                                    <field name="sync_product_variants"/>
+                                    <field name="sync_product_images" 
+                                           help="Enable syncing of product images from BigCommerce to Odoo. Images will be downloaded and attached to products and variants."/>
+                                </group>
+                                <group string="Product Tags (Only Sync Products From Odoo to BigCommerce With Selected Tags)">
+                                    <field name="product_tag_ids" 
+                                           widget="many2many_tags"
+                                           options="{'no_create': True}"
+                                           placeholder="Select product tags for Odoo to BigCommerce sync"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Category Rules">
+                            <group>
+                                <p colspan="2" class="text-muted">
+                                    Set Odoo product category by product SKU (Internal Reference). Rules are evaluated in sequence; first match wins. No category sync with BigCommerce. When no rule matches, the default category below is used.
+                                </p>
+                            </group>
+                            <field name="category_rule_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="filter_type"/>
+                                    <field name="filter_value"/>
+                                    <field name="odoo_category_id"/>
+                                    <field name="active"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Field Mapping">
+                            <field name="field_mapping_ids" nolabel="1">
+                                <list>
+                                    <field name="sync_type"/>
+                                    <field name="bc_field"/>
+                                    <field name="odoo_field"/>
+                                    <field name="mapping_type"/>
+                                    <field name="active"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Warehouse Mapping">
+                            <field name="warehouse_mapping_ids" nolabel="1">
+                                <list>
+                                    <field name="odoo_warehouse_id"/>
+                                    <field name="bc_location_name"/>
+                                    <field name="is_default"/>
+                                    <field name="min_threshold"/>
+                                    <field name="active"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Location Mapping">
+                            <field name="location_mapping_ids" nolabel="1" context="{'default_config_id': id}">
+                                <list create="1" delete="1" editable="bottom">
+                                    <field name="odoo_location_id"/>
+                                    <field name="is_default"/>
+                                    <field name="min_threshold"/>
+                                    <field name="active"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Webhooks">
+                            <group>
+                                <group string="Webhook Configuration">
+                                    <field name="webhook_enabled"/>
+                                    <field name="webhook_url" readonly="1" widget="url"/>
+                                    <field name="webhook_base_url" placeholder="https://your-domain.com" 
+                                           invisible="not webhook_enabled"/>
+                                </group>
+                                <group string="Webhook Status">
+                                    <field name="webhooks_registered" readonly="1"/>
+                                    <field name="webhook_registration_date" readonly="1" 
+                                           invisible="not webhooks_registered"/>
+                                    <field name="webhook_last_received" readonly="1" 
+                                           invisible="not webhooks_registered"/>
+                                    <field name="webhook_total_received" readonly="1" 
+                                           invisible="not webhooks_registered"/>
+                                    <field name="webhook_total_processed" readonly="1" 
+                                           invisible="not webhooks_registered"/>
+                                    <field name="webhook_total_failed" readonly="1" 
+                                           invisible="not webhooks_registered"/>
+                                </group>
+                            </group>
+                            <group invisible="not webhook_enabled">
+                                <div class="alert alert-info" role="alert">
+                                    <strong>Important:</strong> After selecting webhook scopes, click "Register Webhooks" to activate them in BigCommerce.
+                                    Webhooks provide real-time updates from BigCommerce to Odoo.
+                                </div>
+                            </group>
+                            <group invisible="not webhook_enabled">
+                                <group string="Product Webhooks">
+                                    <field name="webhook_product_created"/>
+                                    <field name="webhook_product_updated"/>
+                                    <field name="webhook_product_deleted"/>
+                                    <field name="webhook_product_inventory_updated"/>
+                                </group>
+                                <group string="Order Webhooks">
+                                    <field name="webhook_order_created"/>
+                                    <field name="webhook_order_updated"/>
+                                    <field name="webhook_order_archived"/>
+                                    <field name="webhook_order_status_updated"/>
+                                    <field name="webhook_order_message_created"/>
+                                    <field name="webhook_order_refund_created"/>
+                                </group>
+                                <group string="Customer Webhooks">
+                                    <field name="webhook_customer_created"/>
+                                    <field name="webhook_customer_updated"/>
+                                    <field name="webhook_customer_deleted"/>
+                                    <field name="webhook_customer_address_created"/>
+                                    <field name="webhook_customer_address_updated"/>
+                                    <field name="webhook_customer_address_deleted"/>
+                                </group>
+                                <group string="Shipment Webhooks">
+                                    <field name="webhook_shipment_created"/>
+                                    <field name="webhook_shipment_updated"/>
+                                    <field name="webhook_shipment_deleted"/>
+                                </group>
+                                <group string="Category Webhooks">
+                                    <field name="webhook_category_created"/>
+                                    <field name="webhook_category_updated"/>
+                                    <field name="webhook_category_deleted"/>
+                                </group>
+                            </group>
+                            <group invisible="not webhook_enabled">
+                                <button name="action_register_webhooks" string="Register Webhooks" 
+                                        type="object" class="btn-primary"
+                                        help="Register selected webhooks with BigCommerce"/>
+                                <button name="action_unregister_webhooks" string="Unregister All Webhooks" 
+                                        type="object" class="btn-warning"
+                                        invisible="not webhooks_registered"
+                                        confirm="Are you sure you want to unregister all webhooks? This will stop real-time updates from BigCommerce."
+                                        help="Remove all registered webhooks from BigCommerce"/>
+                                <button name="action_view_webhooks" string="View Registered Webhooks" 
+                                        type="object" class="btn-secondary"
+                                        help="View list of currently registered webhooks in BigCommerce"/>
+                            </group>
+                            <field name="webhook_ids_json" invisible="1"/>
+                        </page>
+                        <page string="Statistics">
+                            <group>
+                                <group string="Last Sync Times">
+                                    <field name="last_product_sync"/>
+                                    <field name="last_order_sync"/>
+                                    <field name="last_inventory_sync"/>
+                                    <field name="last_customer_sync"/>
+                                    <field name="last_fulfillment_sync"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_config_list" model="ir.ui.view">
+        <field name="name">bigcommerce.config.list</field>
+        <field name="model">bigcommerce.config</field>
+        <field name="arch" type="xml">
+            <list string="BigCommerce Configurations">
+                <field name="name"/>
+                <field name="store_hash"/>
+                <field name="active"/>
+                <field name="last_product_sync"/>
+                <field name="last_order_sync"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_config_search" model="ir.ui.view">
+        <field name="name">bigcommerce.config.search</field>
+        <field name="model">bigcommerce.config</field>
+        <field name="arch" type="xml">
+            <search string="BigCommerce Configurations">
+                <field name="name"/>
+                <field name="store_hash"/>
+                <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+                <filter string="Inactive" name="inactive" domain="[('active', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="bigcommerce_connector.action_bigcommerce_config" model="ir.actions.act_window">
+        <field name="name">BigCommerce Configurations</field>
+        <field name="res_model">bigcommerce.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first BigCommerce configuration!
+            </p>
+            <p>
+                Configure your BigCommerce store connection by providing your store hash and access token.
+            </p>
+        </field>
+    </record>
+</odoo>
+

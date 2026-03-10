@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Sync Operation List View -->
+    <record id="view_bigcommerce_sync_operation_list" model="ir.ui.view">
+        <field name="name">bigcommerce.sync.operation.list</field>
+        <field name="model">bigcommerce.sync.operation</field>
+        <field name="arch" type="xml">
+            <list string="Sync Operations" default_order="start_date desc" 
+                  decoration-success="state == 'completed'" 
+                  decoration-warning="state == 'completed_with_warnings'" 
+                  decoration-danger="state == 'failed'"
+                  decoration-muted="state in ('running', 'cancelled')">
+                <field name="start_date" string="Date &amp; Time"/>
+                <field name="sync_type"/>
+                <field name="config_id"/>
+                <field name="state" widget="badge" 
+                       decoration-success="state == 'completed'" 
+                       decoration-warning="state == 'completed_with_warnings'" 
+                       decoration-danger="state == 'failed'"
+                       decoration-info="state == 'running'"/>
+                <field name="items_synced" string="Total Synced"/>
+                <field name="items_created" optional="hide"/>
+                <field name="items_updated" optional="hide"/>
+                <field name="items_failed" optional="hide"/>
+                <field name="items_archived" string="Archived" optional="hide"/>
+                <field name="error_count" string="Errors" 
+                       decoration-danger="error_count &gt; 0"/>
+                <field name="warning_count" string="Warnings" 
+                       decoration-warning="warning_count &gt; 0"/>
+                <field name="duration" string="Duration (s)" optional="hide"/>
+                <button name="action_view_logs" type="object" string="View Logs" 
+                        class="btn-primary" icon="fa-list"/>
+                <button name="action_view_error_logs" type="object" string="View Errors" 
+                        class="btn-danger" icon="fa-exclamation-triangle"
+                        invisible="error_count == 0"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Sync Operation Form View -->
+    <record id="view_bigcommerce_sync_operation_form" model="ir.ui.view">
+        <field name="name">bigcommerce.sync.operation.form</field>
+        <field name="model">bigcommerce.sync.operation</field>
+        <field name="arch" type="xml">
+            <form string="Sync Operation">
+                <header>
+                    <button name="action_cancel" string="Cancel" type="object" class="btn-danger" invisible="state != 'running'"/>
+                    <button name="action_view_logs" string="View All Logs" type="object" class="btn-primary"/>
+                    <button name="action_view_error_logs" string="View Error Logs" type="object" class="btn-danger" invisible="error_count == 0"/>
+                    <field name="state" widget="statusbar" statusbar_visible="running,completed,completed_with_warnings,failed,cancelled"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_logs" type="object" class="oe_stat_button" icon="fa-list">
+                            <field name="log_count" string="Logs" widget="statinfo"/>
+                        </button>
+                    </div>
+                    
+                    <div class="oe_title">
+                        <h1>
+                            <field name="display_name" readonly="1"/>
+                        </h1>
+                    </div>
+                    
+                    <group>
+                        <group string="Sync Information">
+                            <field name="sync_type"/>
+                            <field name="config_id"/>
+                            <field name="sync_direction"/>
+                            <field name="start_date"/>
+                            <field name="end_date"/>
+                            <field name="duration" widget="float_time"/>
+                        </group>
+                        <group string="Statistics">
+                            <field name="total_items"/>
+                            <field name="items_synced"/>
+                            <field name="items_created"/>
+                            <field name="items_updated"/>
+                            <field name="items_skipped"/>
+                            <field name="items_failed"/>
+                            <field name="items_archived" invisible="sync_type != 'product'"/>
+                            <field name="error_count" decoration-danger="error_count &gt; 0"/>
+                            <field name="warning_count" decoration-warning="warning_count &gt; 0"/>
+                        </group>
+                    </group>
+                    
+                    <notebook>
+                        <page string="Summary" invisible="not summary">
+                            <field name="summary" nolabel="1" widget="text"/>
+                        </page>
+                        <page string="Error Summary" invisible="not error_summary">
+                            <field name="error_summary" nolabel="1" widget="text"/>
+                        </page>
+                        <page string="Logs">
+                            <field name="log_ids" nolabel="1">
+                                <list decoration-danger="log_level == 'error'" 
+                                      decoration-warning="log_level == 'warning'" 
+                                      decoration-info="log_level == 'info'">
+                                    <field name="log_date"/>
+                                    <field name="log_level" widget="badge" 
+                                           decoration-success="log_level == 'info'" 
+                                           decoration-warning="log_level == 'warning'" 
+                                           decoration-danger="log_level == 'error'"/>
+                                    <field name="message"/>
+                                    <field name="product_name" optional="hide"/>
+                                    <field name="response_status" optional="hide"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Sync Operation Search View -->
+    <record id="view_bigcommerce_sync_operation_search" model="ir.ui.view">
+        <field name="name">bigcommerce.sync.operation.search</field>
+        <field name="model">bigcommerce.sync.operation</field>
+        <field name="arch" type="xml">
+            <search string="Sync Operations">
+                <field name="sync_type"/>
+                <field name="config_id"/>
+                <field name="start_date"/>
+                
+                <filter string="Failed" name="failed" domain="[('state', '=', 'failed')]"/>
+                <filter string="With Warnings" name="warnings" domain="[('state', '=', 'completed_with_warnings')]"/>
+                <filter string="Completed" name="completed" domain="[('state', '=', 'completed')]"/>
+                <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
+                <filter string="Cancelled" name="cancelled" domain="[('state', '=', 'cancelled')]"/>
+                
+                <separator/>
+                
+                <filter string="Products" name="products" domain="[('sync_type', '=', 'product')]"/>
+                <filter string="Orders" name="orders" domain="[('sync_type', '=', 'order')]"/>
+                <filter string="Inventory" name="inventory" domain="[('sync_type', '=', 'inventory')]"/>
+                <filter string="Customers" name="customers" domain="[('sync_type', '=', 'customer')]"/>
+                <filter string="Fulfillments" name="fulfillments" domain="[('sync_type', '=', 'fulfillment')]"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Sync Operation Action -->
+    <record id="bigcommerce_connector.action_bigcommerce_sync_operation" model="ir.actions.act_window">
+        <field name="name">Sync Operations</field>
+        <field name="res_model">bigcommerce.sync.operation</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No sync operations yet!
+            </p>
+            <p>
+                Sync operations will appear here when sync tasks run. Each operation shows statistics and detailed logs.
+            </p>
+        </field>
+    </record>
+</odoo>

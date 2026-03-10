@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <!-- Payment Provider Form View - Add Affirm specific fields and help message -->
+    <record id="payment_provider_form_affirm" model="ir.ui.view">
+        <field name="name">payment.provider.form.affirm</field>
+        <field name="model">payment.provider</field>
+        <field name="inherit_id" ref="payment.payment_provider_form"/>
+        <field name="arch" type="xml">
+            <!-- Show Published/Unpublished stat button for Affirm even if module_state != installed -->
+            <xpath expr="//div[@name='button_box']" position="attributes">
+                <attribute name="invisible">module_state != 'installed' and code != 'affirm'</attribute>
+            </xpath>
+            <!-- Published toggle at top next to State so it's always visible (base form only shows stat buttons) -->
+            <xpath expr="//field[@name='state']" position="after">
+                <field name="is_published" widget="boolean_toggle" invisible="code != 'affirm'"/>
+            </xpath>
+            <xpath expr="//group[@name='provider_credentials']" position="after">
+                <!-- Show Affirm credentials when Code is Affirm OR when Code is empty (No Provider Set) so user can configure -->
+                <group name="affirm_credentials" invisible="code and code != 'affirm'">
+                    <group>
+                        <field name="affirm_public_key" password="True" placeholder="e.g., ABCD1234EFGH5678"/>
+                        <field name="affirm_private_key" password="True" placeholder="e.g., 1234abcd5678efgh"/>
+                    </group>
+                    <group>
+                        <field name="affirm_merchant_name" placeholder="Your Store Name"/>
+                    </group>
+                </group>
+                <div name="affirm_help" invisible="code and code != 'affirm'" class="alert alert-info" role="alert">
+                    <h4>How to Configure Affirm Payment Provider</h4>
+                    <ol>
+                        <li>Sign up for an Affirm merchant account at <a href="https://www.affirm.com/business" target="_blank">https://www.affirm.com/business</a></li>
+                        <li>Log in to your <a href="https://www.affirm.com/dashboard" target="_blank">Affirm Merchant Dashboard</a></li>
+                        <li>Navigate to Settings → API Keys</li>
+                        <li>Copy your Public API Key and paste it in the "Affirm Public API Key" field above</li>
+                        <li>Copy your Private API Key and paste it in the "Affirm Private API Key" field above</li>
+                        <li>For testing, use sandbox mode with your <a href="https://sandbox.affirm.com/dashboard" target="_blank">Sandbox Dashboard</a> credentials</li>
+                        <li>Set the Merchant Display Name to your customer-facing store name</li>
+                        <li>Save and activate the payment provider</li>
+                    </ol>
+                    <p><strong>Note:</strong> Affirm currently supports USD transactions only. Ensure your orders are in USD when using Affirm.</p>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

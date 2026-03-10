@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_bigcommerce_field_mapping_form" model="ir.ui.view">
+        <field name="name">bigcommerce.field.mapping.form</field>
+        <field name="model">bigcommerce.field.mapping</field>
+        <field name="arch" type="xml">
+            <form string="Field Mapping">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="config_id"/>
+                            <field name="sync_type"/>
+                            <field name="bc_field"/>
+                            <field name="odoo_field"/>
+                        </group>
+                        <group>
+                            <field name="mapping_type"/>
+                            <field name="transform_function" invisible="mapping_type != 'transform'"/>
+                            <field name="default_value" invisible="mapping_type != 'default'"/>
+                            <field name="active"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_field_mapping_list" model="ir.ui.view">
+        <field name="name">bigcommerce.field.mapping.list</field>
+        <field name="model">bigcommerce.field.mapping</field>
+        <field name="arch" type="xml">
+            <list string="Field Mappings">
+                <field name="sync_type"/>
+                <field name="bc_field"/>
+                <field name="odoo_field"/>
+                <field name="mapping_type"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_bigcommerce_field_mapping_search" model="ir.ui.view">
+        <field name="name">bigcommerce.field.mapping.search</field>
+        <field name="model">bigcommerce.field.mapping</field>
+        <field name="arch" type="xml">
+            <search string="Field Mappings">
+                <field name="sync_type"/>
+                <field name="bc_field"/>
+                <field name="odoo_field"/>
+                <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_bigcommerce_field_mapping" model="ir.actions.act_window">
+        <field name="name">Field Mappings</field>
+        <field name="res_model">bigcommerce.field.mapping</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create a field mapping
+            </p>
+            <p>
+                Configure how BigCommerce fields map to Odoo fields during sync.
+            </p>
+        </field>
+    </record>
+</odoo>
+

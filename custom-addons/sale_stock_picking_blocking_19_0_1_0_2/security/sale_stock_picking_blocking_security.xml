@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2017 ForgeFlow S.L.
+     License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <!-- Delete old corrupted group if it exists -->
+    <delete model="res.groups" search="[('name', '=', 'Release Delivery Block in Sales Orders')]"/>
+    
+    <!-- Create new properly configured group -->
+    <record id="group_sale_delivery_block" model="res.groups">
+        <field name="name">Release Delivery Block in Sales Orders</field>
+        <field name="comment">The user will be able to release deliveries that have been blocked in a sale order.</field>
+        <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman'))]"/>
+    </record>
+</odoo>

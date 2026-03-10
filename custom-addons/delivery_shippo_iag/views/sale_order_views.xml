@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <!-- Get Shippo Rates only via: Add shipping > select Shippo > Get Shippo Rates (no button on SO form) -->
+  <record id="view_order_form_shippo" model="ir.ui.view">
+    <field name="name">sale.order.form.shippo</field>
+    <field name="model">sale.order</field>
+    <field name="inherit_id" ref="sale.view_order_form"/>
+    <field name="arch" type="xml">
+      <xpath expr="//div[@name='button_box']" position="attributes">
+        <attribute name="name">button_box</attribute>
+      </xpath>
+    </field>
+  </record>
+</odoo>

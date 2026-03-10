@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+  <record id="view_fishbowl_historical_order_tree" model="ir.ui.view">
+    <field name="name">fishbowl.historical.order.tree</field>
+    <field name="model">fishbowl.historical.order</field>
+    <field name="arch" type="xml">
+      <list string="Fishbowl Historical Orders" decoration-muted="state in ('void', 'cancelled', 'expired')">
+        <field name="fishbowl_order_num"/>
+        <field name="order_date"/>
+        <field name="partner_id"/>
+        <field name="fishbowl_customer_name"/>
+        <field name="fishbowl_customer_email"/>
+        <field name="fishbowl_customer_phone"/>
+        <field name="customer_po"/>
+        <field name="state"/>
+        <field name="line_count"/>
+      </list>
+    </field>
+  </record>
+
+  <record id="view_fishbowl_historical_order_form" model="ir.ui.view">
+    <field name="name">fishbowl.historical.order.form</field>
+    <field name="model">fishbowl.historical.order</field>
+    <field name="arch" type="xml">
+      <form string="Fishbowl Historical Order">
+        <sheet>
+          <div class="oe_button_box" name="button_box"/>
+          <widget name="web_ribbon" title="Historical" bg_color="text-bg-secondary"/>
+          <group>
+            <group>
+              <field name="name"/>
+              <field name="fishbowl_order_num"/>
+              <field name="fishbowl_id" invisible="True"/>
+              <field name="partner_id" options="{'no_create': True}"/>
+              <field name="fishbowl_customer_id" invisible="True"/>
+              <field name="fishbowl_customer_name"/>
+              <field name="fishbowl_customer_email"/>
+              <field name="fishbowl_customer_phone"/>
+              <field name="customer_po"/>
+              <field name="order_date"/>
+              <field name="date_completed"/>
+              <field name="state"/>
+            </group>
+          </group>
+          <notebook>
+            <page string="Order Lines" name="lines">
+              <field name="line_ids">
+                <list editable="bottom" create="0" delete="0">
+                  <field name="sequence" widget="handle"/>
+                  <field name="product_num"/>
+                  <field name="description"/>
+                  <field name="quantity" digits="[16, 2]"/>
+                  <field name="uom"/>
+                  <field name="unit_price" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                  <field name="total_price" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                  <field name="currency_id" column_invisible="True"/>
+                </list>
+              </field>
+            </page>
+            <page string="Notes" name="notes" invisible="not note">
+              <field name="note" nolabel="1" placeholder="No notes"/>
+            </page>
+          </notebook>
+        </sheet>
+      </form>
+    </field>
+  </record>
+
+  <record id="view_fishbowl_historical_order_search" model="ir.ui.view">
+    <field name="name">fishbowl.historical.order.search</field>
+    <field name="model">fishbowl.historical.order</field>
+    <field name="arch" type="xml">
+      <search string="Fishbowl Historical Orders">
+        <field name="name" string="Order Reference" filter_domain="['|', '|', '|', '|', '|', ('name', 'ilike', self), ('fishbowl_order_num', 'ilike', self), ('fishbowl_customer_name', 'ilike', self), ('fishbowl_customer_email', 'ilike', self), ('fishbowl_customer_phone', 'ilike', self), ('customer_po', 'ilike', self)]"/>
+        <field name="fishbowl_order_num" string="Fishbowl SO#"/>
+        <field name="partner_id" string="Customer"/>
+        <field name="partner_email" string="Customer Email"/>
+        <field name="fishbowl_customer_name" string="Fishbowl Customer Name"/>
+        <field name="fishbowl_customer_email" string="Fishbowl Customer Email"/>
+        <field name="fishbowl_customer_phone" string="Fishbowl Customer Phone"/>
+        <field name="customer_po" string="Customer PO"/>
+        <field name="part_numbers" string="Part Number"/>
+        <filter string="Fulfilled" name="fulfilled" domain="[('state', '=', 'fulfilled')]"/>
+        <filter string="Issued / In Progress" name="issued" domain="[('state', 'in', ['issued', 'in_progress'])]"/>
+        <filter string="Void / Cancelled" name="void" domain="[('state', 'in', ['void', 'cancelled'])]"/>
+        <separator/>
+        <filter string="My Customers" name="my_customers" domain="[('partner_id', '!=', False)]"/>
+        <filter string="Unmatched" name="unmatched" domain="[('partner_id', '=', False)]"/>
+        <separator/>
+        <filter string="Order Date" name="order_date" domain="[]" context="{'group_by': 'order_date'}"/>
+        <group>
+          <filter string="Customer" name="group_partner" context="{'group_by': 'partner_id'}"/>
+          <filter string="Status" name="group_state" context="{'group_by': 'state'}"/>
+        </group>
+      </search>
+    </field>
+  </record>
+
+  <record id="action_fishbowl_historical_order" model="ir.actions.act_window">
+    <field name="name">Fishbowl Historical Orders</field>
+    <field name="res_model">fishbowl.historical.order</field>
+    <field name="view_mode">list,form</field>
+    <field name="search_view_id" ref="view_fishbowl_historical_order_search"/>
+    <field name="context">{'search_default_my_customers': 0}</field>
+    <field name="help" type="html">
+      <p class="o_view_nocontent_smiling_face">
+        No Fishbowl historical orders yet.
+      </p>
+      <p>
+        Configure a Fishbowl connection under Settings, then run the import wizard to pull historical orders from Fishbowl MySQL (e.g. last 3 years in batches). Orders are stored here only; they do not create Odoo sales orders or accounting entries.
+      </p>
+    </field>
+  </record>
+
+  <menuitem id="menu_fishbowl_root" name="Fishbowl" sequence="50" web_icon="fishbowl_historical_orders,static/description/icon.png"/>
+  <menuitem id="menu_fishbowl_historical_order"
+            name="Historical Orders"
+            action="action_fishbowl_historical_order"
+            parent="menu_fishbowl_root"
+            sequence="15"/>
+
+</odoo>
