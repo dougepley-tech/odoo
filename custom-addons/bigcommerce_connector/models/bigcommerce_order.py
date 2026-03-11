@@ -2,11 +2,15 @@
 
 from odoo import models, fields, api
 from odoo.exceptions import UserError
+from odoo.fields import Domain
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 import logging
 
 _logger = logging.getLogger(__name__)
+
+# BigCommerce customer group names that should be created as companies (is_company=True) in Odoo
+WHOLESALE_COMPANY_GROUP_NAMES = ('Wholesale Jobber', 'Wholesale Silver', 'Wholesale Gold')
 
 
 class SaleOrder(models.Model):
@@ -459,11 +463,12 @@ class BigCommerceOrderSync(models.Model):
             except Exception as e:
                 _logger.debug("Could not fetch shipping addresses for order %s on update: %s", bc_order_id, e)
                 shipping_address = {}
+        # Use company (or same-address partner) for invoice; only create invoice sub-contact when needed
         invoice_partner = partner
-        if billing_address:
+        if billing_address and not self._should_use_partner_for_invoice(billing_address, partner):
             invoice_partner = self._get_or_create_address_partner(partner, billing_address, 'invoice')
         shipping_partner = partner
-        if shipping_address:
+        if shipping_address and not self._address_equals_partner(shipping_address, partner):
             shipping_partner = self._get_or_create_address_partner(partner, shipping_address, 'delivery')
         
         write_vals = {
@@ -587,14 +592,14 @@ class BigCommerceOrderSync(models.Model):
                 _logger.debug("Could not fetch shipping addresses for order %s: %s", bc_order_id, e)
                 shipping_address = {}
         
-        # Create or get invoice partner address
+        # Use company (or same-address partner) for invoice; only create invoice sub-contact when needed
         invoice_partner = partner
-        if billing_address:
+        if billing_address and not self._should_use_partner_for_invoice(billing_address, partner):
             invoice_partner = self._get_or_create_address_partner(partner, billing_address, 'invoice')
         
-        # Create or get shipping partner address
+        # Create or get shipping partner address only if different from customer address
         shipping_partner = partner
-        if shipping_address:
+        if shipping_address and not self._address_equals_partner(shipping_address, partner):
             shipping_partner = self._get_or_create_address_partner(partner, shipping_address, 'delivery')
         
         # Map BigCommerce status to Odoo state
@@ -1014,17 +1019,17 @@ class BigCommerceOrderSync(models.Model):
             if config.default_customer_enabled and config.default_customer_id:
                 return config.default_customer_id
             # Guest order: create contact from order billing so each order gets the correct contact
-            partner = self._create_partner_from_order_billing(0, bc_order)
+            partner = self._create_partner_from_order_billing(0, bc_order, api=api)
             if partner:
                 return partner
             raise ValueError("Order has no customer_id and no billing address to create a contact. Set a default customer in Order Import Settings or fix the order in BigCommerce.")
         
-        # Check if customer exists in Odoo
+        # Check if customer exists in Odoo by BigCommerce ID
         customer = self.env['res.partner'].search([('bigcommerce_id', '=', customer_id)], limit=1)
         if customer:
             return customer
-        
-        # Fetch customer from BigCommerce
+
+        # Fetch customer from BigCommerce (we need it to match existing company or create new)
         try:
             bc_customer = api.get_customer(customer_id)
             if not bc_customer or not isinstance(bc_customer, dict):
@@ -1034,12 +1039,34 @@ class BigCommerceOrderSync(models.Model):
                 self._create_log('warning', error_msg,
                                  order_id=bc_order.get('id') if bc_order else None,
                                  order_name=f"Order #{bc_order.get('id')}" if bc_order else None)
-                partner = self._create_partner_from_order_billing(customer_id, bc_order)
+                partner = self._create_partner_from_order_billing(customer_id, bc_order, api=api)
                 if partner:
                     return partner
                 if config.default_customer_enabled and config.default_customer_id:
                     return config.default_customer_id
                 raise ValueError(f"Cannot create or find customer for BC customer_id={customer_id}. Set a default customer in Order Import Settings or ensure the order has a billing address.")
+
+            # Before creating a new partner, check for an existing company (is_company=True) matching
+            # by company name or email. If found, link it to this BC customer so the delivery contact
+            # is attached to the company instead of creating a new top-level person.
+            bc_company = (bc_customer.get('company') or '').strip()
+            if bc_company and '@' in bc_company:
+                bc_company = ''
+            bc_email = (bc_customer.get('email') or '').strip()
+            if bc_company or bc_email:
+                existing_company = self._find_existing_company_for_bc_customer(
+                    bc_company, bc_email, customer_id
+                )
+                if existing_company:
+                    existing_company.write({'bigcommerce_id': customer_id})
+                    self._create_log(
+                        'info',
+                        f"Linked existing company {existing_company.name} to BC customer {customer_id}; delivery will be attached as contact.",
+                        order_id=bc_order.get('id') if bc_order else None,
+                        order_name=existing_company.name,
+                    )
+                    return existing_company
+
             customer_vals = {
                 'name': f"{bc_customer.get('first_name', '')} {bc_customer.get('last_name', '')}".strip(),
                 'email': bc_customer.get('email', ''),
@@ -1052,6 +1079,8 @@ class BigCommerceOrderSync(models.Model):
             bc_company = bc_customer.get('company', '').strip()
             if bc_company and '@' not in bc_company:
                 customer_vals['company_name'] = bc_company
+            if self._customer_group_is_wholesale_company(bc_customer.get('customer_group_id'), api):
+                customer_vals['is_company'] = True
             new_partner = self.env['res.partner'].create(customer_vals)
             self._create_log('info', f"Created new customer {new_partner.name} (BC ID: {customer_id})",
                             order_id=customer_id, order_name=new_partner.name)
@@ -1066,14 +1095,76 @@ class BigCommerceOrderSync(models.Model):
                              order_name=f"Order #{bc_order.get('id')}" if bc_order else None,
                              error_details=str(e))
             # Create customer from order billing when possible so the order has the correct contact
-            partner = self._create_partner_from_order_billing(customer_id, bc_order)
+            partner = self._create_partner_from_order_billing(customer_id, bc_order, api=api)
             if partner:
                 return partner
             if config.default_customer_enabled and config.default_customer_id:
                 return config.default_customer_id
             raise ValueError(f"Cannot create or find customer for BC customer_id={customer_id}. Fix the customer in BigCommerce or set a default customer in Order Import Settings.") from e
+
+    def _find_existing_company_for_bc_customer(self, company_name, email, bc_customer_id):
+        """Find an existing Odoo company (is_company=True) that matches by company name or email.
+        Used so we attach the order's delivery contact to the company instead of creating a new person.
+        Only returns a partner that does not already have a different bigcommerce_id (so we don't steal
+        a company that is linked to another BC customer).
+        """
+        if not company_name and not email:
+            return self.env['res.partner']
+        # Must be a top-level company not already linked to another BC customer
+        base = [
+            ('is_company', '=', True),
+            ('parent_id', '=', False),
+            '|', ('bigcommerce_id', '=', False), ('bigcommerce_id', '=', 0),
+        ]
+        match_terms = []
+        if company_name:
+            match_terms.append(('name', 'ilike', company_name))
+            if 'company_name' in self.env['res.partner']._fields:
+                match_terms.append(('company_name', 'ilike', company_name))
+        if email:
+            match_terms.append(('email', '=', email))
+        if not match_terms:
+            return self.env['res.partner']
+        if len(match_terms) == 1:
+            match_domain = Domain([match_terms[0]])
+        else:
+            match_domain = Domain([match_terms[0]])
+            for t in match_terms[1:]:
+                match_domain = match_domain | Domain([t])
+        domain = Domain(base) & match_domain
+        existing = self.env['res.partner'].search(domain, limit=1)
+        if existing and (existing.bigcommerce_id in (False, 0, None)):
+            return existing
+        return self.env['res.partner']
+
+    def _get_wholesale_company_group_ids(self, api):
+        """Return set of BigCommerce customer group IDs whose name is Wholesale Jobber, Silver, or Gold.
+        Cached on config for the current request to avoid repeated API calls."""
+        config = self.config_id
+        cache_attr = '_bc_wholesale_company_group_ids'
+        if getattr(config, cache_attr, None) is not None:
+            return getattr(config, cache_attr)
+        try:
+            groups = api.get_customer_groups() or []
+            ids = {int(g['id']) for g in groups if g.get('name') in WHOLESALE_COMPANY_GROUP_NAMES}
+            setattr(config, cache_attr, ids)
+            return ids
+        except Exception as e:
+            _logger.warning("Could not fetch BigCommerce customer groups for wholesale company check: %s", e)
+            setattr(config, cache_attr, set())
+            return set()
+
+    def _customer_group_is_wholesale_company(self, customer_group_id, api):
+        """Return True if customer_group_id (from BC customer or order) is one of the wholesale company groups."""
+        if customer_group_id is None:
+            return False
+        try:
+            gid = int(customer_group_id)
+        except (TypeError, ValueError):
+            return False
+        return gid in self._get_wholesale_company_group_ids(api)
     
-    def _create_partner_from_order_billing(self, customer_id, bc_order):
+    def _create_partner_from_order_billing(self, customer_id, bc_order, api=None):
         """Create a minimal res.partner from order billing when BC customer API fails. Returns partner or False."""
         if not bc_order or not isinstance(bc_order, dict):
             return False
@@ -1081,6 +1172,20 @@ class BigCommerceOrderSync(models.Model):
         if not billing or not isinstance(billing, dict):
             return False
         addr = self._extract_address(billing)
+        bc_company = (addr.get('company') or billing.get('company') or '').strip()
+        if bc_company and '@' in bc_company:
+            bc_company = ''
+        email = (billing.get('email') or bc_order.get('billing_address', {}).get('email') or '').strip()
+        if customer_id and (bc_company or email):
+            existing_company = self._find_existing_company_for_bc_customer(bc_company, email, customer_id)
+            if existing_company:
+                existing_company.write({'bigcommerce_id': customer_id})
+                self._create_log(
+                    'info',
+                    f"Linked existing company {existing_company.name} to BC customer {customer_id} (from billing); delivery will be attached as contact.",
+                    order_id=bc_order.get('id'), order_name=existing_company.name,
+                )
+                return existing_company
         name = f"{addr.get('first_name', '')} {addr.get('last_name', '')}".strip()
         if not name:
             name = f"BC Customer {customer_id}"
@@ -1111,9 +1216,10 @@ class BigCommerceOrderSync(models.Model):
         # Only set bigcommerce_id for non-guest so we can find this partner on future orders
         if customer_id:
             vals['bigcommerce_id'] = customer_id
-        bc_company = (addr.get('company') or billing.get('company') or '').strip()
         if bc_company and '@' not in bc_company:
             vals['company_name'] = bc_company
+        if api and self._customer_group_is_wholesale_company(bc_order.get('customer_group_id'), api):
+            vals['is_company'] = True
         try:
             partner = self.env['res.partner'].create(vals)
             self._create_log('info', f"Created customer from order billing: {partner.name} (BC ID: {customer_id})",
@@ -1165,7 +1271,112 @@ class BigCommerceOrderSync(models.Model):
             'phone': address_data.get('phone', ''),
             'email': (address_data.get('email') or '').strip(),
         }
-    
+
+    def _address_equals_partner(self, address, partner):
+        """Return True if the BC address (from _extract_address) matches the partner's main address.
+        Used to avoid creating invoice/delivery sub-contacts when they are the same as the customer address."""
+        if not address or not partner:
+            return not address and not partner
+        # Resolve country_id from address (same logic as _get_or_create_address_partner)
+        country_id = False
+        if address.get('country_iso2'):
+            country = self.env['res.country'].search([('code', '=', address.get('country_iso2'))], limit=1)
+            country_id = country.id if country else False
+        if not country_id and address.get('country'):
+            country_name = (address.get('country') or '').strip()
+            if country_name:
+                country = self.env['res.country'].search([('name', 'ilike', country_name)], limit=1)
+                if not country and len(country_name) == 2:
+                    country = self.env['res.country'].search([('code', '=', country_name.upper())], limit=1)
+                country_id = country.id if country else False
+        state_id = False
+        if address.get('state') and country_id:
+            state = self.env['res.country.state'].search([
+                ('name', '=', address.get('state')),
+                ('country_id', '=', country_id)
+            ], limit=1)
+            state_id = state.id if state else False
+        # Normalize for comparison (strip, treat empty consistently)
+        def n(s):
+            return (s or '').strip()
+        addr_street = n(address.get('street_1'))
+        addr_street2 = n(address.get('street_2'))
+        addr_city = n(address.get('city'))
+        addr_zip = n(address.get('zip'))
+        p_street = n(partner.street)
+        p_street2 = n(partner.street2 or '')
+        p_city = n(partner.city)
+        p_zip = n(partner.zip or '')
+        p_country_id = partner.country_id.id if partner.country_id else False
+        p_state_id = partner.state_id.id if partner.state_id else False
+        return (
+            addr_street == p_street
+            and addr_street2 == p_street2
+            and addr_city == p_city
+            and addr_zip == p_zip
+            and country_id == p_country_id
+            and state_id == p_state_id
+        )
+
+    def _should_use_partner_for_invoice(self, billing_address, partner):
+        """Return True if we should use the partner as invoice (do not create a separate invoice contact).
+        Used when the company already exists and billing is the same as the company address (including
+        format differences), or when the partner is a company or company-like (top-level with company name)."""
+        if not partner:
+            return False
+        # Always use the company record for invoice when it's marked as a company
+        if partner.is_company:
+            return True
+        # Top-level partner with company_name is treated as company (e.g. legacy records without is_company)
+        if partner.parent_id is False and getattr(partner, 'company_name', None) and partner.company_name:
+            return True
+        # If billing address exactly matches partner, we use partner (no need to create)
+        if billing_address and self._address_equals_partner(billing_address, partner):
+            return True
+        # Same location (city, zip, country, state) and billing name would be same as partner -> use partner
+        # to avoid creating a duplicate when BC sends "9 Old Windsor Rd" + "Unit 9-B" and Odoo has "9 Old Windsor Rd Ste B"
+        if not billing_address:
+            return False
+        def n(s):
+            return (s or '').strip()
+        addr_city = n(billing_address.get('city'))
+        addr_zip = n(billing_address.get('zip'))
+        p_city = n(partner.city)
+        p_zip = n(partner.zip or '')
+        p_country_id = partner.country_id.id if partner.country_id else False
+        p_state_id = partner.state_id.id if partner.state_id else False
+        country_id = False
+        if billing_address.get('country_iso2'):
+            country = self.env['res.country'].search([('code', '=', billing_address.get('country_iso2'))], limit=1)
+            country_id = country.id if country else False
+        if not country_id and billing_address.get('country'):
+            country = self.env['res.country'].search([('name', 'ilike', n(billing_address.get('country')))], limit=1)
+            country_id = country.id if country else False
+        state_id = False
+        if billing_address.get('state') and country_id:
+            state = self.env['res.country.state'].search([
+                ('name', '=', billing_address.get('state')),
+                ('country_id', '=', country_id)
+            ], limit=1)
+            state_id = state.id if state else False
+        if addr_city != p_city or addr_zip != p_zip or country_id != p_country_id or state_id != p_state_id:
+            return False
+        # Location matches; use partner for invoice when billing name matches partner (same entity)
+        billing_name = n(f"{billing_address.get('first_name', '')} {billing_address.get('last_name', '')}".strip())
+        bc_company = n(billing_address.get('company', ''))
+        if bc_company and '@' in bc_company:
+            bc_company = ''
+        if not billing_name:
+            billing_name = bc_company
+        partner_name = n(partner.name or '')
+        if billing_name and partner_name and billing_name.lower() == partner_name.lower():
+            return True
+        if bc_company and partner_name and bc_company.lower() in partner_name.lower():
+            return True
+        if partner_name and bc_company and partner_name.lower() in bc_company.lower():
+            return True
+        return False
+
     def _get_or_create_address_partner(self, parent_partner, address, address_type='invoice'):
         """Create or get a partner address record for invoice or shipping (e.g. dropship delivery address)."""
         if not address:

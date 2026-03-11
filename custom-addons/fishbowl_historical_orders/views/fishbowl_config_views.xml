@@ -61,7 +61,8 @@
   <menuitem id="menu_fishbowl_config"
             name="Connection"
             action="action_fishbowl_config"
-            parent="menu_fishbowl_root"
+            parent="menu_fishbowl_configuration"
+            groups="fishbowl_historical_orders.group_fishbowl_historical_orders_admin"
             sequence="5"/>
 
 </odoo>

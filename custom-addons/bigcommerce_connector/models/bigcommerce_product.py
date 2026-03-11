@@ -1261,8 +1261,10 @@ class ProductProduct(models.Model):
     
     def _sync_variant_to_bc(self, api, bc_product_id):
         """Sync a single product variant to BigCommerce"""
+        # Use direct variant price when product_variant_pricing sets list_price_override
+        effective_price = self.variant_list_price if self.list_price_override else self.list_price
         variant_data = {
-            'price': str(self.list_price) if self.list_price else '0',
+            'price': str(effective_price) if effective_price else '0',
             'weight': self.weight or 0,
         }
         
@@ -1361,6 +1363,8 @@ class BigCommerceProductSync(models.Model):
     
     # Link to sync operation for dashboard tracking
     sync_operation_id = fields.Many2one('bigcommerce.sync.operation', string='Sync Operation', ondelete='set null')
+    # When sync is cancelled or fails, config.last_product_sync is reverted to this value (last successful sync start time)
+    config_last_sync_before_run = fields.Datetime(string='Config Last Sync Before Run', readonly=True)
     
     @api.depends('total_items', 'processed_items')
     def _compute_progress(self):
@@ -1371,9 +1375,74 @@ class BigCommerceProductSync(models.Model):
             else:
                 record.progress_percentage = 0.0
     
+    def _revert_config_last_product_sync(self):
+        """Revert config last_product_sync and stats to last successful sync (or clear).
+        Call when this product sync is cancelled or fails so the config does not show
+        the failed/cancelled run as the last sync. Uses raw SQL in a new cursor so
+        the revert commits even when the main request transaction is rolled back.
+        """
+        if not self.config_id:
+            return
+        config_id = self.config_id.id
+        last_sync = self.config_last_sync_before_run
+        last_op = self.env['bigcommerce.sync.operation'].search([
+            ('sync_type', '=', 'product'),
+            ('config_id', '=', config_id),
+            ('state', 'in', ['completed', 'completed_with_warnings']),
+        ], order='start_date desc', limit=1)
+        if last_op:
+            last_ts = last_op.start_date
+            total = last_op.total_items or 0
+            updated = last_op.items_updated or 0
+            failed = last_op.items_failed or 0
+            warnings = last_op.warning_count or 0
+        else:
+            last_ts = last_sync
+            total = updated = failed = warnings = 0
+
+        def _do_revert(cr):
+            if last_ts:
+                cr.execute(
+                    """
+                    UPDATE bigcommerce_config
+                    SET last_product_sync = %s, last_product_sync_total = %s,
+                        last_product_sync_updated = %s, last_product_sync_failed = %s,
+                        last_product_sync_warnings = %s
+                    WHERE id = %s
+                    """,
+                    (last_ts, total, updated, failed, warnings, config_id),
+                )
+            else:
+                cr.execute(
+                    """
+                    UPDATE bigcommerce_config
+                    SET last_product_sync = NULL, last_product_sync_total = 0,
+                        last_product_sync_updated = 0, last_product_sync_failed = 0,
+                        last_product_sync_warnings = 0
+                    WHERE id = %s
+                    """,
+                    (config_id,),
+                )
+            cr.commit()
+
+        try:
+            with self.env.registry.cursor() as new_cr:
+                _do_revert(new_cr)
+            _logger.info(
+                "Reverted config %s last_product_sync to %s (cancelled/failed sync)",
+                config_id, last_ts,
+            )
+        except Exception as e:
+            _logger.warning("Could not revert last_product_sync in new cursor: %s", e)
+            try:
+                _do_revert(self.env.cr)
+                _logger.info("Reverted config %s last_product_sync in current transaction", config_id)
+            except Exception as e2:
+                _logger.warning("Could not commit revert of last_product_sync: %s", e2)
+
     def _check_cancelled(self):
         """Check if the sync operation has been cancelled
-        
+
         This method reads fresh data from the database to ensure we see
         cancellation even if the sync is running in a long transaction.
         """
@@ -1612,13 +1681,16 @@ class BigCommerceProductSync(models.Model):
                 ('log_level', '=', 'WARNING'),
                 ('log_date', '>=', self.config_id.last_product_sync or fields.Datetime.now() - timedelta(days=1))
             ])
+            # Only update config last sync time and stats on success (cancelled/failed runs revert in _revert_config_last_product_sync)
+            last_sync_time = self.sync_operation_id.start_date if self.sync_operation_id else fields.Datetime.now()
             self.config_id.write({
+                'last_product_sync': last_sync_time,
                 'last_product_sync_total': total_items,
                 'last_product_sync_updated': self.products_updated,
                 'last_product_sync_failed': self.products_failed,
                 'last_product_sync_warnings': warnings_count,
             })
-            
+
             # Update sync operation record
             if self.sync_operation_id:
                 state = 'completed_with_warnings' if warnings_count > 0 else 'completed'
@@ -1702,6 +1774,7 @@ class BigCommerceProductSync(models.Model):
                 self.state = 'error'
                 self.error_message = str(e)
                 _logger.info(f"Product sync cancelled: {str(e)}")
+                self._revert_config_last_product_sync()
             else:
                 # Other UserError (e.g. product not found): mark sync as failed and stop
                 self.state = 'error'
@@ -1730,6 +1803,7 @@ class BigCommerceProductSync(models.Model):
                             self.env.cr.commit()
                     except Exception as update_error:
                         _logger.warning(f"Could not update sync operation on UserError: {str(update_error)}")
+                self._revert_config_last_product_sync()
                 raise
         except Exception as e:
             self.state = 'error'
@@ -1792,6 +1866,7 @@ class BigCommerceProductSync(models.Model):
                         pass
             
             _logger.error(f"Product sync error: {str(e)}", exc_info=True)
+            self._revert_config_last_product_sync()
             raise UserError(f"Product sync failed: {str(e)}")
     
     def action_cancel_sync(self):
@@ -3719,6 +3794,29 @@ class BigCommerceProductSync(models.Model):
             )
             raise
     
+    def _safe_attribute_or_value_name(self, name, fallback_prefix='Option', fallback_id=None):
+        """Never persist 'False' or 'True' as attribute/value name (can come from BC boolean in API)."""
+        if name is None:
+            name = ''
+        if not isinstance(name, str):
+            name = str(name)
+        name = (name or '').strip()
+        if name in ('False', 'True'):
+            return f'{fallback_prefix} {fallback_id}' if fallback_id else fallback_prefix
+        return name or (f'{fallback_prefix} {fallback_id}' if fallback_id else fallback_prefix)
+
+    @staticmethod
+    def _normalize_value_for_match(label):
+        """Strip erroneous 'False: ' / 'True: ' prefix for matching (existing DB may have it)."""
+        if not label or not isinstance(label, str):
+            return (label or '').strip()
+        s = (label or '').strip()
+        if s.startswith('False: '):
+            return s[7:].strip()
+        if s.startswith('True: '):
+            return s[6:].strip()
+        return s
+
     def _sync_product_attributes(self, api_client, bc_product_id, product_template, bc_product=None):
         """Sync product attributes/options from BigCommerce to Odoo
         
@@ -3762,7 +3860,11 @@ class BigCommerceProductSync(models.Model):
                     continue
                 
                 bc_option_id = bc_option.get('id')
-                bc_option_name = bc_option.get('display_name', '') or bc_option.get('name', '')
+                bc_option_name = bc_option.get('display_name') or bc_option.get('name') or ''
+                if not isinstance(bc_option_name, str):
+                    bc_option_name = ''
+                bc_option_name = (bc_option_name or '').strip()
+                bc_option_name = self._safe_attribute_or_value_name(bc_option_name, 'Option', bc_option_id)
                 
                 if not bc_option_id or not bc_option_name:
                     _logger.debug(f"Skipping option - missing ID or name. ID: {bc_option_id}, Name: {bc_option_name}")
@@ -3784,14 +3886,17 @@ class BigCommerceProductSync(models.Model):
                 else:
                     _logger.debug(f"Using existing attribute: {bc_option_name} (ID: {odoo_attribute.id})")
                 
-                # Get option values
-                try:
-                    bc_option_values = api_client.get_product_option_values(bc_product_id, bc_option_id)
-                    if not bc_option_values:
+                # Get option values - prefer embedded values from pre-fetched options
+                bc_option_values = bc_option.get('option_values') or []
+                if not bc_option_values:
+                    # Fall back to separate API call if values not embedded
+                    try:
+                        bc_option_values = api_client.get_product_option_values(bc_product_id, bc_option_id)
+                        if not bc_option_values:
+                            bc_option_values = []
+                    except Exception as e:
+                        _logger.warning(f"Could not fetch option values for option BC ID={bc_option_id}: {str(e)}")
                         bc_option_values = []
-                except Exception as e:
-                    _logger.warning(f"Could not fetch option values for option BC ID={bc_option_id}: {str(e)}")
-                    bc_option_values = []
                 
                 value_mapping = {}
                 
@@ -3803,7 +3908,12 @@ class BigCommerceProductSync(models.Model):
                         continue
                     
                     bc_value_id = bc_value.get('id')
-                    bc_value_label = bc_value.get('label', '') or bc_value.get('option_value', '')
+                    # Use only string fields for label; 'option_value' can be boolean in BC API
+                    bc_value_label = bc_value.get('label') or bc_value.get('option_value') or ''
+                    if not isinstance(bc_value_label, str):
+                        bc_value_label = bc_value.get('label') or ''
+                    bc_value_label = (bc_value_label or '').strip() if isinstance(bc_value_label, str) else ''
+                    bc_value_label = self._safe_attribute_or_value_name(bc_value_label, 'Value', bc_value_id)
                     
                     if not bc_value_id or not bc_value_label:
                         _logger.debug(f"Skipping option value - missing ID or label. ID: {bc_value_id}, Label: {bc_value_label}")
@@ -3817,7 +3927,21 @@ class BigCommerceProductSync(models.Model):
                         ('attribute_id', '=', odoo_attribute.id),
                         ('name', '=', bc_value_label)
                     ], limit=1)
-                    
+
+                    if not odoo_value:
+                        # Check for old erroneous "False: " / "True: " prefixed version from a past sync
+                        # and rename it instead of creating a duplicate value
+                        for _prefix in ('False: ', 'True: '):
+                            bad_value = attribute_value_obj.search([
+                                ('attribute_id', '=', odoo_attribute.id),
+                                ('name', '=', f'{_prefix}{bc_value_label}')
+                            ], limit=1)
+                            if bad_value:
+                                bad_value.write({'name': bc_value_label})
+                                odoo_value = bad_value
+                                _logger.info(f"Renamed erroneous attribute value '{_prefix}{bc_value_label}' → '{bc_value_label}' on attribute '{odoo_attribute.name}'")
+                                break
+
                     if not odoo_value:
                         odoo_value = attribute_value_obj.create({
                             'name': bc_value_label,
@@ -3870,10 +3994,10 @@ class BigCommerceProductSync(models.Model):
                     except Exception as update_error:
                         _logger.error(f"Failed to update attribute line for '{odoo_attribute.name}': {str(update_error)}")
                         raise
-            
+
             # Commit all attribute lines before triggering variant creation
             self.env.cr.commit()
-            
+
             # Trigger variant creation by accessing product_variant_ids
             try:
                 product_template.invalidate_recordset(['attribute_line_ids', 'product_variant_ids'])
@@ -3922,12 +4046,17 @@ class BigCommerceProductSync(models.Model):
                 _logger.warning(f"Variants data is not a list: {type(bc_variants)}, Value: {bc_variants}")
                 return attribute_mapping
             
-            # Collect all unique option-value pairs from variants
+            # Collect all unique option-value pairs from variants.
+            # Use only purchasable variants so we never pick up option_values that may contain
+            # raw booleans (e.g. value: false) which could end up as "False"/"True" in names.
             options_data = {}  # {option_id: {'name': '', 'values': {value_id: 'label'}}}
             
             for bc_variant in bc_variants:
                 if not isinstance(bc_variant, dict):
                     _logger.warning(f"Skipping invalid variant (not a dictionary): {bc_variant}")
+                    continue
+                if bc_variant.get('purchasing_disabled', False):
+                    _logger.debug(f"Skipping non-purchasable variant BC ID={bc_variant.get('id')} when building attribute names")
                     continue
                 
                 variant_id = bc_variant.get('id', 'Unknown')
@@ -3970,16 +4099,25 @@ class BigCommerceProductSync(models.Model):
                     bc_value_id = (bc_option_value.get('id') or 
                                  bc_option_value.get('value_id') or 
                                  bc_option_value.get('valueId'))
-                    bc_option_name = (bc_option_value.get('option_display_name', '') or 
-                                    bc_option_value.get('option_name', '') or 
-                                    bc_option_value.get('optionName', '') or
-                                    bc_option_value.get('name', '') or
-                                    bc_option_value.get('display_name', ''))
-                    bc_value_label = (bc_option_value.get('label', '') or 
-                                    bc_option_value.get('value', '') or 
-                                    bc_option_value.get('option_value', '') or
-                                    bc_option_value.get('optionValue', '') or
-                                    bc_option_value.get('label_text', ''))
+                    # Option/attribute name: use only string fields (BC can return booleans for some keys)
+                    bc_option_name = (bc_option_value.get('option_display_name') or
+                                    bc_option_value.get('option_name') or
+                                    bc_option_value.get('optionName') or
+                                    bc_option_value.get('name') or
+                                    bc_option_value.get('display_name') or '')
+                    if not isinstance(bc_option_name, str):
+                        bc_option_name = bc_option_value.get('option_display_name') or bc_option_value.get('option_name') or ''
+                    bc_option_name = (bc_option_name or '').strip() if isinstance(bc_option_name, str) else ''
+                    bc_option_name = self._safe_attribute_or_value_name(bc_option_name, 'Option', bc_option_id)
+                    # Value label: use only string fields; 'value' can be boolean (e.g. checkbox) and must not be used as name
+                    bc_value_label = (bc_option_value.get('label') or
+                                    bc_option_value.get('option_value') or
+                                    bc_option_value.get('optionValue') or
+                                    bc_option_value.get('label_text') or '')
+                    if not isinstance(bc_value_label, str):
+                        bc_value_label = bc_option_value.get('label') or ''
+                    bc_value_label = (bc_value_label or '').strip() if isinstance(bc_value_label, str) else ''
+                    bc_value_label = self._safe_attribute_or_value_name(bc_value_label, 'Value', bc_value_id)
                     
                     _logger.debug(f"Extracted from variant option_value: option_id={bc_option_id}, value_id={bc_value_id}, option_name={bc_option_name}, value_label={bc_value_label}")
                     
@@ -3989,35 +4127,75 @@ class BigCommerceProductSync(models.Model):
                     
                     if bc_option_id not in options_data:
                         options_data[bc_option_id] = {
-                            'name': bc_option_name or f'Option {bc_option_id}',
+                            'name': bc_option_name,
                             'values': {}
                         }
                         _logger.debug(f"Found new option: {options_data[bc_option_id]['name']} (BC ID: {bc_option_id})")
                     
                     if bc_value_id not in options_data[bc_option_id]['values']:
-                        # Use the exact label from BigCommerce - do not clean or modify it
-                        if not bc_value_label:
-                            bc_value_label = f'Value {bc_value_id}'
-                        
-                        options_data[bc_option_id]['values'][bc_value_id] = bc_value_label
+                        options_data[bc_option_id]['values'][bc_value_id] = bc_value_label or f'Value {bc_value_id}'
                         _logger.info(f"Found new option value: {bc_value_label} (BC ID: {bc_value_id})")
             
             if not options_data:
                 return attribute_mapping
             
+            # If any option name is a fallback ("Option 123"), try to get real name from options API
+            try:
+                bc_options = api_client.get_product_options(bc_product_id)
+                if isinstance(bc_options, list):
+                    options_by_id = {opt.get('id'): opt for opt in bc_options if isinstance(opt, dict) and opt.get('id')}
+                    for bc_option_id, option_data in options_data.items():
+                        if (option_data['name'] or '').strip().startswith('Option '):
+                            opt = options_by_id.get(bc_option_id)
+                            if opt:
+                                real_name = (opt.get('display_name') or opt.get('name') or '').strip()
+                                if isinstance(real_name, str) and real_name and real_name not in ('False', 'True'):
+                                    option_data['name'] = real_name
+                                    _logger.debug(f"Using options API name for option {bc_option_id}: '{real_name}'")
+            except Exception as e:
+                _logger.debug(f"Could not fetch options API for real names: {e}")
+            
             # Step 1: Create all attributes and values first
             attribute_obj = self.env['product.attribute']
             attribute_value_obj = self.env['product.attribute.value']
             attribute_line_obj = self.env['product.template.attribute.line']
+            replaced_bad_line_ids = set()  # Don't match the same "False"/"True" line to two options
             
             for bc_option_id, option_data in options_data.items():
-                option_name = option_data['name']
+                option_name = self._safe_attribute_or_value_name(option_data['name'], 'Option', bc_option_id)
                 
                 # Find or create product attribute
                 odoo_attribute = attribute_obj.search([
                     ('name', '=', option_name)
                 ], limit=1)
                 
+                if not odoo_attribute:
+                    # Product may have a line with attribute wrongly named "False"/"True" from an old sync.
+                    # Find that line by matching value set (normalized); strip "False: "/"True: " from line values for match.
+                    value_labels_for_option = set(
+                        self._normalize_value_for_match(v) for v in option_data['values'].values()
+                    )
+                    for bad_line in attribute_line_obj.search([
+                        ('product_tmpl_id', '=', product_template.id),
+                        ('attribute_id.name', 'in', ['False', 'True'])
+                    ]):
+                        if bad_line.id in replaced_bad_line_ids:
+                            continue
+                        line_value_names = set(
+                            self._normalize_value_for_match(n) for n in bad_line.value_ids.mapped('name')
+                        )
+                        if line_value_names == value_labels_for_option:
+                            odoo_attribute = attribute_obj.create({
+                                'name': option_name,
+                                'create_variant': 'always',
+                            })
+                            bad_line.unlink()
+                            replaced_bad_line_ids.add(bad_line.id)
+                            _logger.info(f"Replaced 'False'/'True' attribute line with '{option_name}' (product BC ID={bc_product_id})")
+                            break
+                
+                if not odoo_attribute:
+                    odoo_attribute = attribute_obj.search([('name', '=', option_name)], limit=1)
                 if not odoo_attribute:
                     odoo_attribute = attribute_obj.create({
                         'name': option_name,
@@ -4028,11 +4206,26 @@ class BigCommerceProductSync(models.Model):
                 
                 # Create all attribute values for this attribute
                 for bc_value_id, value_label in option_data['values'].items():
+                    value_label = self._safe_attribute_or_value_name(value_label, 'Value', bc_value_id)
                     odoo_value = attribute_value_obj.search([
                         ('attribute_id', '=', odoo_attribute.id),
                         ('name', '=', value_label)
                     ], limit=1)
-                    
+
+                    if not odoo_value:
+                        # Check for old erroneous "False: " / "True: " prefixed version from a past sync
+                        # and rename it instead of creating a duplicate value
+                        for _prefix in ('False: ', 'True: '):
+                            bad_value = attribute_value_obj.search([
+                                ('attribute_id', '=', odoo_attribute.id),
+                                ('name', '=', f'{_prefix}{value_label}')
+                            ], limit=1)
+                            if bad_value:
+                                bad_value.write({'name': value_label})
+                                odoo_value = bad_value
+                                _logger.info(f"Renamed erroneous attribute value '{_prefix}{value_label}' → '{value_label}' on attribute '{odoo_attribute.name}'")
+                                break
+
                     if not odoo_value:
                         odoo_value = attribute_value_obj.create({
                             'name': value_label,
@@ -4357,8 +4550,27 @@ class BigCommerceProductSync(models.Model):
                             f"(attribute match failed; counts match, using first unmatched variant)"
                         )
                 
+                # Skip non-purchasable BC variants: do not sync them; archive Odoo variant if it exists
+                # BigCommerce API uses purchasing_disabled (true = not purchasable). See:
+                # https://developer.bigcommerce.com/docs/rest-catalog/product-variants
+                bc_purchasing_disabled = bc_variant.get('purchasing_disabled', False)
+                if bc_purchasing_disabled:
+                    if matching_variant:
+                        matched_odoo_variant_ids.add(matching_variant.id)
+                        if matching_variant.active:
+                            matching_variant.write({'active': False})
+                            _logger.info(
+                                f"Archived Odoo variant ID={matching_variant.id} (SKU={matching_variant.default_code}), "
+                                f"BC variant ID={bc_variant_id} has purchasing_disabled=True"
+                            )
+                    else:
+                        _logger.debug(f"Skipping BC variant ID={bc_variant_id} (purchasing_disabled, no matching Odoo variant)")
+                    continue
+                
                 # Prepare variant update values - create a fresh dictionary for each variant
                 variant_vals = {}
+                # Ensure purchasable variants are active (reactivate if previously archived)
+                variant_vals['active'] = True
                 
                 # Create/update variant mapping only when we have a matching Odoo variant (avoids NoneType error)
                 if matching_variant:
@@ -4454,11 +4666,13 @@ class BigCommerceProductSync(models.Model):
                     except (ValueError, TypeError):
                         pass
                 
-                # Store variant price for later use in price_extra calculation
-                # We'll set price_extra on attribute values instead of list_price on the variant
+                # Store variant price for direct variant pricing (product_variant_pricing module)
+                # Set list_price_override and variant_list_price so BC price is used directly on the variant
                 variant_price_for_extra = None
                 if variant_price is not None and variant_price >= 0:
                     variant_price_for_extra = variant_price
+                    variant_vals['list_price_override'] = True
+                    variant_vals['variant_list_price'] = variant_price_for_extra
                     _logger.debug(f"BC Variant ID={bc_variant_id}, SKU={bc_variant.get('sku', 'N/A')}, Price={variant_price}")
                 else:
                     _logger.debug(f"BC Variant ID={bc_variant_id} has no valid price (price={bc_price_raw}, calculated_price={bc_calculated_price_raw})")
@@ -4591,7 +4805,7 @@ class BigCommerceProductSync(models.Model):
                                     old_price = 0.0
                                     _logger.debug(f"Could not read variant price, using 0.0: {str(field_error)}")
                             
-                            # Update variant fields (SKU, barcode, etc.) - but NOT list_price
+                            # Update variant fields (SKU, barcode, list_price_override, variant_list_price, cost, etc.)
                             if variant_vals:
                                 try:
                                     _logger.info(f"Writing variant_vals to Odoo variant ID={matching_variant.id}: {variant_vals}")
@@ -4643,51 +4857,13 @@ class BigCommerceProductSync(models.Model):
                                 except Exception as img_error:
                                     _logger.warning(f"Error syncing image for variant {matching_variant.name} (BC Variant ID: {bc_variant_id}): {str(img_error)}", exc_info=True)
                             
-                            # Update price using price_extra on attribute values
-                            if variant_price_for_extra is not None and product_template:
-                                # Get template base price
-                                template_base_price = product_template.list_price or 0.0
-                                
-                                # Calculate total price_extra needed
-                                # Variant price = template price + sum of price_extra from all attribute values
-                                total_price_extra_needed = variant_price_for_extra - template_base_price
-                                
-                                _logger.debug(f"  Template base price: {template_base_price}, Variant price: {variant_price_for_extra}, Price extra needed: {total_price_extra_needed}")
-                                
-                                # Get the variant's attribute values (PTAV records)
-                                variant_ptavs = matching_variant.product_template_attribute_value_ids
-                                
-                                if variant_ptavs:
-                                    # Calculate current total price_extra
-                                    current_total_extra = sum(variant_ptavs.mapped('price_extra'))
-                                    
-                                    # Calculate how much to adjust each attribute value
-                                    # Simple approach: distribute the difference evenly, or set on first if only one
-                                    if len(variant_ptavs) == 1:
-                                        # Single attribute: set all price_extra on this one
-                                        ptav = variant_ptavs[0]
-                                        ptav.write({'price_extra': total_price_extra_needed})
-                                        _logger.debug(f"  Set price_extra={total_price_extra_needed} on attribute value '{ptav.product_attribute_value_id.name}'")
-                                    else:
-                                        # Multiple attributes: distribute the total price_extra
-                                        # We'll set it proportionally based on current price_extra, or evenly if all are 0
-                                        if current_total_extra == 0:
-                                            # Distribute evenly
-                                            price_extra_per_attr = total_price_extra_needed / len(variant_ptavs)
-                                            for ptav in variant_ptavs:
-                                                ptav.write({'price_extra': price_extra_per_attr})
-                                            _logger.debug(f"  Distributed price_extra evenly: {price_extra_per_attr} per attribute ({len(variant_ptavs)} attributes)")
-                                        else:
-                                            # Distribute proportionally based on current price_extra
-                                            # Adjust each ptav's price_extra proportionally
-                                            adjustment_needed = total_price_extra_needed - current_total_extra
-                                            for ptav in variant_ptavs:
-                                                proportion = ptav.price_extra / current_total_extra if current_total_extra != 0 else 1.0 / len(variant_ptavs)
-                                                new_price_extra = ptav.price_extra + (adjustment_needed * proportion)
-                                                ptav.write({'price_extra': new_price_extra})
-                                            _logger.debug(f"  Distributed price_extra proportionally across {len(variant_ptavs)} attributes (adjustment: {adjustment_needed})")
-                                else:
-                                    _logger.warning(f"  Variant {matching_variant.id} has no attribute values, cannot set price_extra")
+                            # Set attribute price_extra to 0 for all variants (pricing is via variant_list_price from product_variant_pricing)
+                            variant_ptavs = matching_variant.product_template_attribute_value_ids
+                            if variant_ptavs:
+                                for ptav in variant_ptavs:
+                                    if ptav.price_extra != 0:
+                                        ptav.write({'price_extra': 0.0})
+                                _logger.debug(f"  Set price_extra=0 for {len(variant_ptavs)} attribute value(s) on variant {matching_variant.id}")
                             
                             # Commit to ensure changes are persisted
                             self.env.cr.commit()
@@ -4695,8 +4871,8 @@ class BigCommerceProductSync(models.Model):
                             # Invalidate and reload to verify the update
                             matching_variant.invalidate_recordset()
                             product_template.invalidate_recordset() if product_template else None
-                            # Access fields to reload from database
-                            new_price = matching_variant.list_price
+                            # Access fields to reload from database (use variant_list_price when using direct variant pricing)
+                            new_price = matching_variant.variant_list_price if matching_variant.list_price_override else matching_variant.list_price
                             new_sku = matching_variant.default_code
                             
                             # Verify the price was set correctly

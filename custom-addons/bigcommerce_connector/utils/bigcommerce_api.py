@@ -745,6 +745,29 @@ class BigCommerceAPI:
             self.base_url = original_base_url
         return result
     
+    def get_customer_groups(self):
+        """Get all customer groups from BigCommerce.
+
+        Note: Customer Groups API is only available in V2, not V3.
+        This method automatically uses V2 API regardless of the default api_version setting.
+
+        Returns:
+            List of customer group dicts with 'id' and 'name' (and other fields).
+            Empty list on error or if endpoint is unavailable.
+        """
+        original_api_version = self.api_version
+        original_base_url = self.base_url
+        try:
+            self.api_version = 'v2'
+            self.base_url = f"https://api.bigcommerce.com/stores/{self.store_hash}/v2"
+            result = self._make_request('GET', 'customer_groups')
+        finally:
+            self.api_version = original_api_version
+            self.base_url = original_base_url
+        if result is None:
+            return []
+        return result if isinstance(result, list) else []
+
     # Inventory API
     def get_product_inventory(self, product_id):
         """Get inventory for a product

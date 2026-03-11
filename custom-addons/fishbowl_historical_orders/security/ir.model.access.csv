@@ -1,5 +1,6 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_fishbowl_historical_order_user,fishbowl.historical.order.user,model_fishbowl_historical_order,base.group_user,1,1,1,1
 access_fishbowl_historical_order_line_user,fishbowl.historical.order.line.user,model_fishbowl_historical_order_line,base.group_user,1,1,1,1
-access_fishbowl_config_user,fishbowl.config.user,model_fishbowl_config,base.group_user,1,1,1,1
+access_fishbowl_config_user,fishbowl.config.user,model_fishbowl_config,base.group_user,1,0,0,0
+access_fishbowl_config_admin,fishbowl.config.admin,model_fishbowl_config,fishbowl_historical_orders.group_fishbowl_historical_orders_admin,1,1,1,1
 access_fishbowl_import_wizard_user,fishbowl.import.wizard.user,model_fishbowl_import_wizard,base.group_user,1,1,1,1

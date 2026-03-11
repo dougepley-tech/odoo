@@ -3,6 +3,7 @@
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
 from ..utils.bigcommerce_api import BigCommerceAPI
+from datetime import datetime
 import html
 import logging
 
@@ -816,17 +817,16 @@ class BigCommerceConfig(models.Model):
             current_time_minutes = current_hour * 60 + current_minute
             target_time_minutes = target_hour * 60 + target_minute
             time_diff = abs(current_time_minutes - target_time_minutes)
-            
-            # Log time comparison for debugging (use INFO level so it's always visible)
-            _logger.info(f"Daily sync time check: current={current_hour:02d}:{current_minute:02d} ({tz_name}, source: {tz_source}), "
-                        f"target={target_hour:02d}:{target_minute:02d}, diff={time_diff} minutes, "
-                        f"time_of_day={time_of_day}, will_run={time_diff <= 5}, now_local={now_local.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-            
+
+            _logger.info(
+                f"Daily sync time check: current={current_hour:02d}:{current_minute:02d} ({tz_name}, source: {tz_source}), "
+                f"target={target_hour:02d}:{target_minute:02d}, diff={time_diff} minutes, "
+                f"time_of_day={time_of_day}, will_run={time_diff <= 5}, now_local={now_local.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+            )
+
             # CRITICAL: Only run if we're within 5 minutes of the scheduled time
-            # This prevents the sync from running at random times
-            if time_diff <= 5:  # Within 5 minutes of target time (before or after)
+            if time_diff <= 5:
                 if not last_sync:
-                    # No previous sync, run it
                     return True
                 # Convert last_sync to local time for comparison
                 import pytz
@@ -834,76 +834,47 @@ class BigCommerceConfig(models.Model):
                     last_sync_dt = fields.Datetime.from_string(last_sync)
                 else:
                     last_sync_dt = last_sync
-                # Get timezone - config company first, then env company, then user, then system (same logic as _get_local_time)
-                tz_name = 'UTC'
+                tz_for_last = 'UTC'
                 try:
                     if hasattr(self, 'company_id') and self.company_id and getattr(self.company_id, 'tz', None):
-                        tz_name = self.company_id.tz
+                        tz_for_last = self.company_id.tz
                     elif hasattr(self.env.company, 'tz') and self.env.company.tz:
-                        tz_name = self.env.company.tz
+                        tz_for_last = self.env.company.tz
                     elif hasattr(self.env.user, 'tz') and self.env.user.tz:
-                        tz_name = self.env.user.tz
+                        tz_for_last = self.env.user.tz
                     else:
                         import os
                         if os.path.exists('/etc/timezone'):
                             with open('/etc/timezone', 'r') as f:
                                 system_tz = f.read().strip()
                                 if system_tz:
-                                    tz_name = system_tz
+                                    tz_for_last = system_tz
                 except (AttributeError, Exception) as e:
                     _logger.warning(f"Error getting timezone for last_sync conversion: {str(e)}")
-                    tz_name = 'UTC'
-                
-                # If Odoo timezone not available, try system timezone (already handled above, but keep for compatibility)
-                if tz_name == 'UTC':
-                    import os
-                    try:
-                        # Read from /etc/timezone (Ubuntu/Debian)
-                        if os.path.exists('/etc/timezone'):
-                            with open('/etc/timezone', 'r') as f:
-                                system_tz = f.read().strip()
-                                if system_tz:
-                                    tz_name = system_tz
-                    except Exception:
-                        pass
-                
+                    tz_for_last = 'UTC'
                 try:
-                    user_tz = pytz.timezone(tz_name)
+                    user_tz = pytz.timezone(tz_for_last)
                 except (pytz.exceptions.UnknownTimeZoneError, AttributeError):
                     user_tz = pytz.UTC
-                # Convert last_sync to local time
                 if last_sync_dt.tzinfo is None:
                     last_sync_dt = pytz.UTC.localize(last_sync_dt)
                 last_sync_local = last_sync_dt.astimezone(user_tz)
-                
-                # Calculate time in minutes for comparison
                 last_sync_time_minutes = last_sync_local.hour * 60 + last_sync_local.minute
-                target_time_minutes = target_hour * 60 + target_minute
                 last_sync_date = last_sync_local.date()
                 today = now_local.date()
-                
-                # Run sync if:
-                # 1. Last sync was on a previous day (always run at scheduled time)
-                # 2. Last sync was today but at a different time than scheduled (handles schedule changes)
-                #    This allows sync to run if schedule is changed, even on the same day
                 if last_sync_date < today:
-                    # Last sync was on a previous day, so run it
                     return True
                 elif last_sync_date == today:
-                    # Same day - check if last sync was at a different time than scheduled
-                    # If times don't match (within 5 minutes), run it (handles schedule changes)
                     last_sync_time_diff = abs(last_sync_time_minutes - target_time_minutes)
                     if last_sync_time_diff > 5:
-                        # Last sync was at a different time, so run at the new scheduled time
-                        # This handles schedule changes - if schedule is changed, the times won't match
                         return True
-                    # Last sync was at the same scheduled time today, don't run again
                     return False
                 else:
-                    # Last sync is in the future (shouldn't happen), skip
                     return False
-            # NOT within 5 minutes of scheduled time - do NOT run
-            _logger.debug(f"Daily sync: Current time {current_hour:02d}:{current_minute:02d} is {time_diff} minutes away from scheduled time {target_hour:02d}:{target_minute:02d}. Not running.")
+            _logger.debug(
+                f"Daily sync: current {current_hour:02d}:{current_minute:02d} is {time_diff} min from "
+                f"scheduled {target_hour:02d}:{target_minute:02d}. Not running."
+            )
             return False
         elif frequency == 'weekly':
             if day_of_week is False:
@@ -1201,11 +1172,15 @@ class BigCommerceConfig(models.Model):
                 f"{min_date_modified if min_date_modified else 'None (will sync all products)'}"
             )
             
-            # Create a product sync record with the computed min_date_modified
+            # Create a product sync record with the computed min_date_modified.
+            # Store previous_last_sync so product sync can revert config on cancel/failure.
+            # Name includes (Auto Sync) so it's visible in Sync Operations like (Full Sync).
             sync_record = self.env['bigcommerce.product.sync'].create({
                 'config_id': self.id,
                 'sync_direction': self.sync_direction_products,
                 'min_date_modified': min_date_modified,
+                'config_last_sync_before_run': previous_last_sync,
+                'name': f"Product Sync (Auto Sync) {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             })
             sync_record.action_sync_products()
         except Exception as e:
@@ -1220,6 +1195,7 @@ class BigCommerceConfig(models.Model):
             sync_record = self.env['bigcommerce.order.sync'].create({
                 'config_id': self.id,
                 'min_date_modified': self.last_order_sync,  # Only sync orders modified since last sync
+                'name': f"Order Sync (Auto Sync) {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             })
             sync_record.action_sync_orders()
         except Exception as e:
@@ -1235,6 +1211,7 @@ class BigCommerceConfig(models.Model):
                 'config_id': self.id,
                 'sync_direction': 'odoo_to_bc',
                 'min_date_modified': self.last_inventory_sync,  # Only sync inventory changed since last sync
+                'name': f"Inventory Sync (Auto Sync) {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             })
             sync_record.action_sync_inventory()
         except Exception as e:
@@ -1249,6 +1226,7 @@ class BigCommerceConfig(models.Model):
             sync_record = self.env['bigcommerce.customer.sync'].create({
                 'config_id': self.id,
                 'min_date_modified': self.last_customer_sync,  # Only sync customers modified since last sync
+                'name': f"Customer Sync (Auto Sync) {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             })
             sync_record.action_sync_customers()
         except Exception as e:
@@ -1263,6 +1241,7 @@ class BigCommerceConfig(models.Model):
             sync_record = self.env['bigcommerce.fulfillment.sync'].create({
                 'config_id': self.id,
                 'date_from': self.last_fulfillment_sync,  # Only sync fulfillments from last sync date
+                'name': f"Fulfillment Sync (Auto Sync) {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             })
             sync_record.action_sync_fulfillments()
         except Exception as e:

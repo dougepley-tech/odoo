@@ -22,6 +22,7 @@ Fishbowl Historical Orders
         'python': ['pymysql'],
     },
     'data': [
+        'security/fishbowl_historical_orders_groups.xml',
         'security/ir.model.access.csv',
         'views/fishbowl_historical_order_views.xml',
         'views/fishbowl_config_views.xml',

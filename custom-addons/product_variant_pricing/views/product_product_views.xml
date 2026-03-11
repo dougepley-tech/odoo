@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Make Sales Price editable on variant form (per-variant pricing, Odoo 19.1 style) -->
+    <record id="product_variant_easy_edit_view_variant_pricing" model="ir.ui.view">
+        <field name="name">product.product.view.form.easy.variant.pricing</field>
+        <field name="model">product.product</field>
+        <field name="inherit_id" ref="product.product_variant_easy_edit_view"/>
+        <field name="arch" type="xml">
+            <field name="lst_price" position="attributes">
+                <attribute name="readonly">0</attribute>
+            </field>
+        </field>
+    </record>
+</odoo>

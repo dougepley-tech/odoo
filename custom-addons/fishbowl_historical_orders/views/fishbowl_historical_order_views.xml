@@ -113,11 +113,12 @@
     </field>
   </record>
 
-  <menuitem id="menu_fishbowl_root" name="Fishbowl" sequence="50" web_icon="fishbowl_historical_orders,static/description/icon.png"/>
+  <menuitem id="menu_fishbowl_root" name="Fishbowl" sequence="50" action="action_fishbowl_historical_order" web_icon="fishbowl_historical_orders,static/description/icon.png"/>
   <menuitem id="menu_fishbowl_historical_order"
             name="Historical Orders"
             action="action_fishbowl_historical_order"
             parent="menu_fishbowl_root"
-            sequence="15"/>
+            sequence="1"/>
+  <menuitem id="menu_fishbowl_configuration" name="Configuration" parent="menu_fishbowl_root" groups="fishbowl_historical_orders.group_fishbowl_historical_orders_admin" sequence="20"/>
 
 </odoo>

@@ -20,10 +20,12 @@ Features:
     """,
     'author': 'Your Company',
     'website': 'https://www.yourcompany.com',
+    # product_variant_pricing must be in addons path and installed, or this module will not load.
     'depends': [
         'base',
         'sale',
         'product',
+        'product_variant_pricing',
         'stock',
         'contacts',
         'delivery',
