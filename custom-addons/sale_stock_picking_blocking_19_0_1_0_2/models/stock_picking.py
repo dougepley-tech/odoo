@@ -9,12 +9,12 @@ class StockPicking(models.Model):
     _inherit = "stock.picking"
 
     def _has_sale_unpaid_invoices(self):
-        """Return True if this picking's sale order has any posted invoice that is not paid."""
+        """Return True if this picking's sale order has any posted invoice with amount due."""
         self.ensure_one()
         if not self.sale_id:
             return False
         invoices = self.sale_id.invoice_ids.filtered(
-            lambda m: m.state == "posted" and m.payment_state != "paid"
+            lambda m: m.state == "posted" and m.amount_residual > 0
         )
         return bool(invoices)
 
