@@ -50,6 +50,8 @@ class BigCommerceOrderSync(models.Model):
     
     # Link to sync operation for dashboard tracking
     sync_operation_id = fields.Many2one('bigcommerce.sync.operation', string='Sync Operation', ondelete='set null')
+    # When sync is cancelled or fails, config.last_order_sync is reverted to this value (last successful sync start time)
+    config_last_sync_before_run = fields.Datetime(string='Config Last Sync Before Run', readonly=True)
     
     # Specific order sync (bypasses status and date filters)
     sync_specific_order = fields.Boolean(
@@ -76,6 +78,71 @@ class BigCommerceOrderSync(models.Model):
             else:
                 record.progress_percentage = 0.0
     
+    def _revert_config_last_order_sync(self):
+        """Revert config last_order_sync and stats to last successful sync (or clear).
+        Call when this order sync is cancelled or fails so the config does not show
+        the failed/cancelled run as the last sync. Uses raw SQL in a new cursor so
+        the revert commits even when the main request transaction is rolled back.
+        """
+        if not self.config_id:
+            return
+        config_id = self.config_id.id
+        last_sync = self.config_last_sync_before_run
+        last_op = self.env['bigcommerce.sync.operation'].search([
+            ('sync_type', '=', 'order'),
+            ('config_id', '=', config_id),
+            ('state', 'in', ['completed', 'completed_with_warnings']),
+        ], order='start_date desc', limit=1)
+        if last_op:
+            last_ts = last_op.start_date
+            total = last_op.total_items or 0
+            updated = last_op.items_updated or 0
+            failed = last_op.items_failed or 0
+            warnings = last_op.warning_count or 0
+        else:
+            last_ts = last_sync
+            total = updated = failed = warnings = 0
+
+        def _do_revert(cr):
+            if last_ts:
+                cr.execute(
+                    """
+                    UPDATE bigcommerce_config
+                    SET last_order_sync = %s, last_order_sync_total = %s,
+                        last_order_sync_updated = %s, last_order_sync_failed = %s,
+                        last_order_sync_warnings = %s
+                    WHERE id = %s
+                    """,
+                    (last_ts, total, updated, failed, warnings, config_id),
+                )
+            else:
+                cr.execute(
+                    """
+                    UPDATE bigcommerce_config
+                    SET last_order_sync = NULL, last_order_sync_total = 0,
+                        last_order_sync_updated = 0, last_order_sync_failed = 0,
+                        last_order_sync_warnings = 0
+                    WHERE id = %s
+                    """,
+                    (config_id,),
+                )
+            cr.commit()
+
+        try:
+            with self.env.registry.cursor() as new_cr:
+                _do_revert(new_cr)
+            _logger.info(
+                "Reverted config %s last_order_sync to %s (cancelled/failed sync)",
+                config_id, last_ts,
+            )
+        except Exception as e:
+            _logger.warning("Could not revert last_order_sync in new cursor: %s", e)
+            try:
+                _do_revert(self.env.cr)
+                _logger.info("Reverted config %s last_order_sync in current transaction", config_id)
+            except Exception as e2:
+                _logger.warning("Could not commit revert of last_order_sync: %s", e2)
+
     def _check_cancelled(self):
         """Check if the sync operation has been cancelled
         
@@ -189,7 +256,7 @@ class BigCommerceOrderSync(models.Model):
                     _logger.warning("Could not send order sync failure notification: %s", mail_e)
             
         except UserError as e:
-            # UserError from API client already has detailed message
+            # UserError from API client already has detailed message (or sync cancelled)
             self.state = 'error'
             self.error_message = str(e)
             
@@ -201,6 +268,7 @@ class BigCommerceOrderSync(models.Model):
                     'error_count': self.orders_failed + 1,
                 })
             
+            self._revert_config_last_order_sync()
             _logger.error(f"Order sync error: {str(e)}")
             raise
         except Exception as e:
@@ -228,6 +296,7 @@ class BigCommerceOrderSync(models.Model):
                     'error_count': self.orders_failed + 1,
                 })
             
+            self._revert_config_last_order_sync()
             _logger.error(f"Order sync error: {str(e)}", exc_info=True)
             raise UserError(error_msg)
     

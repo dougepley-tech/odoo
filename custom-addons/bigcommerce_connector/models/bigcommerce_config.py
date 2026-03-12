@@ -1187,14 +1187,47 @@ class BigCommerceConfig(models.Model):
             _logger.error(f"Error triggering product sync: {str(e)}", exc_info=True)
     
     def _trigger_order_sync(self):
-        """Trigger order sync"""
+        """Trigger order sync.
+
+        IMPORTANT:
+        - Use the *previous* last_order_sync (or last successful operation) as the
+          min_date_modified filter so we sync orders modified since the last run.
+        - Then update last_order_sync to NOW and commit immediately so only one
+          cron worker can claim this scheduled run.
+        """
         self.ensure_one()
         try:
+            # Determine min_date_modified based on previous successful syncs
+            previous_last_sync = self.last_order_sync
+            min_date_modified = None
+            if previous_last_sync:
+                # Normal case: use the previous last_order_sync timestamp
+                min_date_modified = previous_last_sync
+            else:
+                # Fallback: use the end_date of the last successful order sync operation
+                last_sync_op = self.env['bigcommerce.sync.operation'].search([
+                    ('sync_type', '=', 'order'),
+                    ('config_id', '=', self.id),
+                    ('state', 'in', ['completed', 'completed_with_warnings']),
+                    ('end_date', '!=', False),
+                ], order='end_date desc', limit=1)
+                if last_sync_op:
+                    min_date_modified = last_sync_op.end_date
+
+            # Record this run's start time for scheduling and dashboards
             self.last_order_sync = fields.Datetime.now()
             self.env.cr.commit()
+
+            _logger.info(
+                f"Triggering order sync for config: {self.name}, "
+                f"min_date_modified filter: "
+                f"{min_date_modified if min_date_modified else 'None (will sync all orders)'}"
+            )
+
             sync_record = self.env['bigcommerce.order.sync'].create({
                 'config_id': self.id,
-                'min_date_modified': self.last_order_sync,  # Only sync orders modified since last sync
+                'min_date_modified': min_date_modified,
+                'config_last_sync_before_run': previous_last_sync,
                 'name': f"Order Sync (Auto Sync) {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             })
             sync_record.action_sync_orders()
