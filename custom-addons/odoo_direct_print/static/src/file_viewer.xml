@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="web.FileViewer" t-inherit="web.FileViewer" t-inherit-mode="extension">
+        <!-- Add Print button to header (next to Download) for document preview -->
+        <xpath expr="//div[hasclass('o-FileViewer-download')][hasclass('o-FileViewer-headerButton')]" position="before">
+            <div t-if="state.file" class="o-FileViewer-headerButton d-flex align-items-center px-3 cursor-pointer" role="button" title="Print" t-on-click.stop="() => this.onClickPrintHeader()">
+                <i class="fa fa-print fa-fw me-1" role="img"/>
+                <span>Print</span>
+            </div>
+        </xpath>
+    </t>
+</templates>
