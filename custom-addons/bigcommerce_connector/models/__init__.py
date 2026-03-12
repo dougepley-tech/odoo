@@ -16,6 +16,7 @@ from . import bigcommerce_category_mapping
 from . import bigcommerce_category_rule
 from . import bigcommerce_field_mapping
 from . import bigcommerce_warehouse_mapping
+from . import bigcommerce_order_warehouse_mapping
 from . import bigcommerce_location_mapping
 from . import bigcommerce_dashboard
 

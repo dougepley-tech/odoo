@@ -151,10 +151,22 @@
                                     <field name="import_payments"/>
                                 </group>
                                 <group string="Order Shipment &amp; Stock Configuration">
-                                    <field name="order_warehouse_id" string="Sales Order Delivery Warehouse"
+                                    <field name="order_warehouse_id" string="Default Sales Order Delivery Warehouse"
                                            placeholder="Warehouse for imported orders (Other Info &gt; Delivery)"
                                            domain="[('company_id', 'in', [company_id, False])]"
-                                           help="Sets the Warehouse field on sale orders (Other Info tab, Delivery section)."/>
+                                           help="Default warehouse. Overridden by Order Warehouse Mapping Rules when a product SKU matches."/>
+                                    <div colspan="2">
+                                        <p class="text-muted mb-1">Map order to warehouse by product SKU. Rules evaluated in sequence; first match wins. E.g. SKU starts with "iag-mss" → Engine Department.</p>
+                                    </div>
+                                    <field name="order_warehouse_mapping_ids" string="Order Warehouse Mapping Rules" colspan="2">
+                                        <list editable="bottom" create="1" delete="1">
+                                            <field name="sequence" widget="handle"/>
+                                            <field name="filter_type"/>
+                                            <field name="filter_value" placeholder="e.g. iag-mss"/>
+                                            <field name="odoo_warehouse_id" options="{'no_create': True}"/>
+                                            <field name="active"/>
+                                        </list>
+                                    </field>
                                     <field name="create_shipment"/>
                                     <field name="import_shipment_details"/>
                                     <field name="import_shipment_status_ids" widget="many2many_tags"

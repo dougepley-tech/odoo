@@ -484,8 +484,14 @@ class BigCommerceConfig(models.Model):
                                             help='Auto import shipment details during order import. Only selected order status orders will be imported.')
     import_shipment_status_ids = fields.Many2many('bigcommerce.order.status', string='Order Status',
                                                   help='Only orders with these statuses will have shipment details imported.')
-    order_warehouse_id = fields.Many2one('stock.warehouse', string='Sales Order Delivery Warehouse',
-                                        help='Warehouse to set on the sales order (Other Info > Delivery > Warehouse). Used for all orders imported from BigCommerce. Leave empty to use Odoo default.')
+    order_warehouse_id = fields.Many2one('stock.warehouse', string='Default Sales Order Delivery Warehouse',
+                                        help='Default warehouse for imported orders. Overridden by Order Warehouse Mapping rules when a product SKU matches.')
+    order_warehouse_mapping_ids = fields.One2many(
+        'bigcommerce.order.warehouse.mapping',
+        'config_id',
+        string='Order Warehouse Mapping Rules',
+        help='Map order to warehouse by product SKU. Rules evaluated in sequence; first match wins. E.g. SKU starts with "iag-mss" → Engine Department warehouse.',
+    )
     
     # Order Status Filtering
     sync_order_status_ids = fields.Many2many('bigcommerce.order.status', 'config_order_status_rel', 

@@ -716,8 +716,14 @@ class BigCommerceOrderSync(models.Model):
         if config.default_sales_team_id:
             order_vals['team_id'] = config.default_sales_team_id.id
         
-        # Set delivery warehouse if configured
-        if config.order_warehouse_id:
+        # Set delivery warehouse: first try SKU-based mapping, then fallback to default
+        warehouse_id = self.env['bigcommerce.order.warehouse.mapping'].get_warehouse_id_for_order_products(
+            config, order_products
+        )
+        if warehouse_id:
+            order_vals['warehouse_id'] = warehouse_id
+            _logger.debug(f"Order {bc_order_id}: Assigned warehouse from SKU mapping")
+        elif config.order_warehouse_id:
             order_vals['warehouse_id'] = config.order_warehouse_id.id
         
         # Resolve BC shipping method name early so we can choose Shippo Wholesale when method ends with *
