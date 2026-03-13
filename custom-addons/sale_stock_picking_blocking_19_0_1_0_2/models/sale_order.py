@@ -34,7 +34,18 @@ class SaleOrder(models.Model):
             lambda so: so.state == "sale" and so.delivery_block_id
         )
         order_to_unblock.write({"delivery_block_id": False})
-        order_to_unblock.order_line._action_launch_stock_rule()
+
+        # Temporarily unlock orders so _action_launch_stock_rule can create
+        # deliveries (sale_stock skips procurement when order is locked)
+        locked_orders = order_to_unblock.filtered("locked")
+        if locked_orders:
+            locked_orders.action_unlock()
+        try:
+            order_to_unblock.order_line._action_launch_stock_rule()
+        finally:
+            if locked_orders:
+                locked_orders.action_lock()
+
         return True
 
     def copy(self, default=None):

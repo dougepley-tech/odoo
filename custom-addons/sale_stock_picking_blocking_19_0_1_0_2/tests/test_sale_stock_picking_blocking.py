@@ -98,6 +98,28 @@ class TestSaleDeliveryBlock(TransactionCase):
         pick = self._picking_comp(so)
         self.assertNotEqual(pick, 0, "A delivery should have been made")
 
+    def test_release_delivery_block_when_locked(self):
+        """Release delivery block creates delivery even when sales order is locked."""
+        # Enable auto-lock so orders get locked on confirm
+        config = self.env["res.config.settings"].create(
+            {"group_auto_done_setting": True}
+        )
+        config.execute()
+        block_reason = self.block_model.with_user(self.user_test).create(
+            {"name": "Test Block Locked."}
+        )
+        so = self.sale_order
+        so.write({"delivery_block_id": block_reason.id})
+        so.action_confirm()
+        self.assertTrue(so.locked, "Order should be locked after confirm with auto-done")
+        pick = self._picking_comp(so)
+        self.assertEqual(pick, 0, "The delivery should have been blocked")
+        # Release block - delivery should be created despite lock
+        so.action_remove_delivery_block()
+        pick = self._picking_comp(so)
+        self.assertNotEqual(pick, 0, "Delivery should be created when releasing block on locked order")
+        self.assertTrue(so.locked, "Order should remain locked after release")
+
     def test_default_delivery_block_partner(self):
         block_reason = self.block_model.with_user(self.user_test).create(
             {"name": "Test Block."}
