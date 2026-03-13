@@ -1,7 +1,6 @@
 # Copyright 2024 ForgeFlow S.L.
 #   (http://www.forgeflow.com)
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html).
-from odoo.exceptions import ValidationError
 from odoo.tests import Form, TransactionCase
 
 
@@ -56,8 +55,9 @@ class TestSaleDeliveryBlock(TransactionCase):
         }
         cls.sale_order_line = cls.sol_model.with_user(cls.user_test).create(sol_dict)
 
-    def test_check_auto_done(self):
-        # Set active auto done configuration
+    def test_delivery_block_with_auto_done(self):
+        """Delivery block can be applied when sales order lock (auto done) is enabled."""
+        # Set active auto done configuration (Lock Confirmed Sales)
         config = self.env["res.config.settings"].create(
             {"group_auto_done_setting": True}
         )
@@ -66,9 +66,9 @@ class TestSaleDeliveryBlock(TransactionCase):
             {"name": "Test Block."}
         )
         so = self.sale_order
-        # Check settings constraints
-        with self.assertRaises(ValidationError):
-            so.write({"delivery_block_id": block_reason.id})
+        # Delivery block should be applicable even with auto done setting
+        so.write({"delivery_block_id": block_reason.id})
+        self.assertEqual(so.delivery_block_id, block_reason)
 
     def _picking_comp(self, so):
         """count created pickings"""
