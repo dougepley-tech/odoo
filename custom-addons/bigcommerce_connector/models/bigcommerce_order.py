@@ -488,25 +488,37 @@ class BigCommerceOrderSync(models.Model):
             return False
     
     def _parse_bc_datetime(self, date_string):
-        """Parse BigCommerce datetime string (RFC 2822 format) to Odoo datetime format string"""
+        """Parse BigCommerce datetime string (RFC 2822 or ISO 8601) to Odoo datetime format string.
+        BigCommerce returns dates in UTC. Result is formatted for Odoo date_order.
+        """
         if not date_string:
             return fields.Datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
+        if isinstance(date_string, datetime):
+            return date_string.strftime('%Y-%m-%d %H:%M:%S')
+        date_string = str(date_string).strip()
+        # Try ISO 8601 (e.g. '2026-03-13T08:19:00Z' or '2026-03-13T08:19:00+00:00')
         try:
-            # Try parsing RFC 2822 format (e.g., 'Fri, 15 Jan 2021 16:48:36 +0000')
+            if 'T' in date_string:
+                iso_str = date_string.replace('Z', '+00:00')
+                dt = datetime.fromisoformat(iso_str)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError):
+            pass
+        # Try RFC 2822 (e.g. 'Fri, 15 Jan 2021 16:48:36 +0000')
+        try:
             dt = parsedate_to_datetime(date_string)
             return dt.strftime('%Y-%m-%d %H:%M:%S')
-        except (ValueError, TypeError) as e:
-            # If parsing fails, try Odoo's standard format
-            try:
-                dt = datetime.strptime(date_string, '%Y-%m-%d %H:%M:%S')
-                return date_string
-            except (ValueError, TypeError):
-                warning_msg = f"Could not parse date string '{date_string}', using current time"
-                _logger.warning(warning_msg)
-                # Note: This is a minor warning, so we don't log it to sync log to avoid clutter
-                # Only log if it's critical for order processing
-                return fields.Datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError):
+            pass
+        # Try Odoo standard format
+        try:
+            datetime.strptime(date_string, '%Y-%m-%d %H:%M:%S')
+            return date_string
+        except (ValueError, TypeError):
+            pass
+        warning_msg = f"Could not parse date string '{date_string}', using current time"
+        _logger.warning(warning_msg)
+        return fields.Datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     def _update_existing_order(self, order, api, bc_order):
         """Update an existing order with new status and addresses from BigCommerce.
@@ -546,7 +558,13 @@ class BigCommerceOrderSync(models.Model):
             'partner_invoice_id': invoice_partner.id,
             'partner_shipping_id': shipping_partner.id,
         }
-        
+        # Update date_order to match BigCommerce order date
+        bc_date = self._parse_bc_datetime(
+            bc_order.get('date_created') or bc_order.get('date_modified')
+        )
+        if bc_date:
+            write_vals['date_order'] = bc_date
+
         # Map BigCommerce status to Odoo state
         odoo_state = 'draft'
         if bc_status_id is not None:
@@ -679,8 +697,7 @@ class BigCommerceOrderSync(models.Model):
             if status_mapping:
                 odoo_state = status_mapping.odoo_state
         
-        # Prepare order data
-        date_created = self._parse_bc_datetime(bc_order.get('date_created'))
+        # Prepare order data (date_order set after create - Odoo overwrites it during create)
         config = self.config_id
         
         # Set order name with prefix if configured
@@ -696,7 +713,6 @@ class BigCommerceOrderSync(models.Model):
             'partner_id': partner.id,
             'partner_invoice_id': invoice_partner.id,
             'partner_shipping_id': shipping_partner.id,
-            'date_order': date_created,
             'bigcommerce_id': bc_order.get('id'),
             'bigcommerce_synced': True,
             'bigcommerce_last_sync': fields.Datetime.now(),
@@ -771,8 +787,9 @@ class BigCommerceOrderSync(models.Model):
         except Exception as e:
             _logger.warning(f"Error setting delivery block reason for order {bc_order_id}: {str(e)}")
         
-        # Create order lines
+        # Create order lines; track product_id -> invoice_number for post-create update
         order_lines = []
+        line_invoice_numbers = {}  # product_id -> invoice_number for lines we create
         subtotal = 0.0
         
         if not order_products:
@@ -884,9 +901,22 @@ class BigCommerceOrderSync(models.Model):
                         # Last resort: get first UOM
                         product_uom = self.env['uom.uom'].search([], limit=1)
                 
+                line_name = bc_product.get('name', product.name)
+                invoice_number = self._extract_invoice_number_from_bc_product(bc_product)
+                if invoice_number:
+                    line_name = f"{line_name}\n\nInvoice Number: {invoice_number}"
+                    line_invoice_numbers[product.id] = invoice_number
+                    _logger.debug(f"Order {bc_order_id}: Found invoice number {invoice_number} for product {product.name}")
+                elif 'custom payment' in (line_name or '').lower() or (sku and 'pay' in sku.lower()):
+                    opts = bc_product.get('product_options') or []
+                    cfg = bc_product.get('configurable_fields') or []
+                    _logger.debug(
+                        "Order %s: No invoice number for %s. Options count: %s, configurable count: %s",
+                        bc_order_id, product.name, len(opts) if opts else 0, len(cfg) if cfg else 0,
+                    )
                 order_lines.append((0, 0, {
                     'product_id': product.id,
-                    'name': bc_product.get('name', product.name),
+                    'name': line_name,
                     'product_uom_qty': qty,
                     'product_uom_id': product_uom.id if product_uom else False,
                     'price_unit': price,
@@ -946,11 +976,28 @@ class BigCommerceOrderSync(models.Model):
         
         # Extract delivery_block_id from order_vals to set it after creation
         delivery_block_id_to_set = order_vals.pop('delivery_block_id', None)
+        # date_order must be set after create (Odoo overwrites it during create)
+        bc_date_order = self._parse_bc_datetime(
+            bc_order.get('date_created') or bc_order.get('date_modified')
+        )
+        if bc_date_order:
+            _logger.info(f"Parsed BigCommerce date for order {bc_order_id}: {bc_date_order} (raw: date_created={bc_order.get('date_created')}, date_modified={bc_order.get('date_modified')})")
+        else:
+            _logger.warning(f"No date parsed for BC order {bc_order_id}: date_created={bc_order.get('date_created')}, date_modified={bc_order.get('date_modified')}")
         
         try:
             order = order_obj.create(order_vals)
             self._create_log('info', f"Created new order {order.name} (BC ID: {bc_order_id})",
                             order_id=bc_order_id, order_name=order.name)
+            
+            # Ensure invoice numbers are on order lines (Odoo may overwrite name on create/confirm)
+            if line_invoice_numbers:
+                for line in order.order_line:
+                    if line.product_id and line.product_id.id in line_invoice_numbers:
+                        inv_num = line_invoice_numbers[line.product_id.id]
+                        note_suffix = f"\n\nInvoice Number: {inv_num}"
+                        if note_suffix not in (line.name or ''):
+                            line.write({'name': (line.name or '') + note_suffix})
             
             # Set delivery block AFTER order creation if it was specified
             if delivery_block_id_to_set:
@@ -1073,6 +1120,21 @@ class BigCommerceOrderSync(models.Model):
                     allowed_status_ids = config.import_shipment_status_ids.mapped('bc_status_id') if config.import_shipment_status_ids else []
                     if not config.import_shipment_status_ids or bc_status_id in allowed_status_ids:
                         self._import_shipment_details(api, bc_order.get('id'), order)
+            
+            # Set date_order and create_date to match BigCommerce order date (create_date requires SQL - ORM is readonly)
+            if bc_date_order:
+                try:
+                    order.sudo().write({'date_order': bc_date_order})
+                    _logger.info(f"Order {order.name}: Set date_order to {bc_date_order} from BigCommerce")
+                    # create_date is system-managed; use direct SQL so list view "Creation Date" matches BC order date
+                    self.env.cr.execute(
+                        "UPDATE sale_order SET create_date = %s::timestamp, write_date = %s::timestamp WHERE id = %s",
+                        (bc_date_order, bc_date_order, order.id)
+                    )
+                    order.invalidate_recordset(['create_date', 'write_date'])
+                    _logger.info(f"Order {order.name}: Set create_date to {bc_date_order} from BigCommerce")
+                except Exception as date_err:
+                    _logger.warning(f"Could not set date_order/create_date for order {order.name}: {date_err}")
             
             _logger.info(f"Successfully created order {order.id} from BigCommerce order {bc_order.get('id')}")
             return 'created'
@@ -1540,6 +1602,43 @@ class BigCommerceOrderSync(models.Model):
         if bc_order.get('staff_notes'):
             notes.append(f"Staff Notes: {bc_order.get('staff_notes')}")
         return '\n'.join(notes) if notes else ''
+    
+    def _extract_invoice_number_from_bc_product(self, bc_product):
+        """Extract Invoice Number from BigCommerce order product (e.g. custom payment).
+        Checks product_options, configurable_fields, and product name for Invoice Number.
+        Returns the value string or None if not found.
+        """
+        import re
+        # 1. Check product_options and configurable_fields
+        for opt_list in (bc_product.get('product_options') or [], bc_product.get('configurable_fields') or []):
+            if not isinstance(opt_list, list):
+                continue
+            for opt in opt_list:
+                if not isinstance(opt, dict):
+                    continue
+                label = (
+                    opt.get('name') or opt.get('display_name') or opt.get('label') or
+                    opt.get('option_display_name') or ''
+                ).strip()
+                if label and 'invoice' in label.lower():
+                    val = (
+                        opt.get('value') or opt.get('display_value') or
+                        opt.get('option_value') or opt.get('text')
+                    )
+                    if val is not None:
+                        val_str = (str(val).strip() if not isinstance(val, dict)
+                                  else str(val.get('value') or val.get('display_value') or '').strip())
+                        if val_str:
+                            return val_str
+        # 2. Parse from product name (e.g. "Custom Payment\nInvoice Number: 392751" or embedded in name)
+        for name_field in ('name', 'name_customer', 'name_merchant'):
+            name_val = bc_product.get(name_field) or ''
+            if not name_val:
+                continue
+            match = re.search(r'Invoice\s*Number\s*:\s*(\d+)', name_val, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        return None
     
     def _create_tax_line(self, tax_amount, bc_order):
         """Create a tax line for the order"""

@@ -141,8 +141,7 @@
                     <field name="bigcommerce_mapping_ids" nolabel="1" readonly="1" invisible="1" context="{'default_product_tmpl_id': id}" 
                            view_ref="bigcommerce_connector.view_bigcommerce_product_mapping_tree_simple"/>
                     <!-- Legacy fields for backward compatibility (computed from mappings) -->
-                    <!-- Note: bigcommerce_config_id, bigcommerce_id, bigcommerce_id_display have groups='base.group_no_one' 
-                         and cannot be accessed by normal users, so they're excluded from the view -->
+                    <!-- Legacy BC fields use group_bigcommerce_manager (not base.group_no_one) so BC managers can use sync buttons without developer mode -->
                     <field name="bigcommerce_synced" invisible="1"/>
                     <field name="bigcommerce_last_sync" invisible="1"/>
                 </div>

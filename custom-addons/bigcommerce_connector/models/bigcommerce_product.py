@@ -268,12 +268,13 @@ class ProductTemplate(models.Model):
     # Legacy fields - kept for backward compatibility only (DO NOT USE FOR MULTI-STORE)
     # These will be populated from the first mapping if mappings exist
     # For multi-store products, use bigcommerce_mapping_ids instead
-    bigcommerce_id = fields.Integer(copy=False, index=True, compute='_compute_legacy_bc_fields', store=True, groups='base.group_no_one')
-    bigcommerce_id_display = fields.Char(compute='_compute_bigcommerce_id_display', store=False, groups='base.group_no_one')
-    bigcommerce_variant_id = fields.Integer(copy=False, groups='base.group_no_one')
+    # Legacy fields use group_bigcommerce_manager so BC managers can use sync buttons without developer mode
+    bigcommerce_id = fields.Integer(copy=False, index=True, compute='_compute_legacy_bc_fields', store=True, groups='bigcommerce_connector.group_bigcommerce_manager')
+    bigcommerce_id_display = fields.Char(compute='_compute_bigcommerce_id_display', store=False, groups='bigcommerce_connector.group_bigcommerce_manager')
+    bigcommerce_variant_id = fields.Integer(copy=False, groups='bigcommerce_connector.group_bigcommerce_manager')
     bigcommerce_synced = fields.Boolean(string='Synced with BigCommerce', default=False, compute='_compute_legacy_bc_fields', store=True)
     bigcommerce_last_sync = fields.Datetime(string='Last Sync with BigCommerce', compute='_compute_legacy_bc_fields', store=True)
-    bigcommerce_config_id = fields.Many2one('bigcommerce.config', compute='_compute_legacy_bc_fields', store=True, groups='base.group_no_one')
+    bigcommerce_config_id = fields.Many2one('bigcommerce.config', compute='_compute_legacy_bc_fields', store=True, groups='bigcommerce_connector.group_bigcommerce_manager')
     
     # New multi-store support
     bigcommerce_mapping_ids = fields.One2many('bigcommerce.product.mapping', 'product_tmpl_id', string='BigCommerce Mappings')
