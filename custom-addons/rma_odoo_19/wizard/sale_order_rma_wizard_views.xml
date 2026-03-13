@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="sale_order_rma_wizard_view_form" model="ir.ui.view">
+        <field name="name">sale.order.rma.wizard.view.form</field>
+        <field name="model">sale.order.rma.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <group>
+                    <group>
+                        <field name="order_id" readonly="1"/>
+                        <field name="operation_id"/>
+                        <field name="reason_id"/>
+                        <field name="is_cross_ship"/>
+                        <field name="waive_restocking_fee"/>
+                        <field name="location_id" invisible="1"/>
+                    </group>
+                    <group>
+                        <field name="partner_shipping_id"/>
+                        <field name="is_return_all"/>
+                    </group>
+                </group>
+                <field name="line_ids">
+                    <list editable="bottom">
+                        <field name="product_id"/>
+                        <field name="quantity"/>
+                        <field name="allowed_quantity" readonly="1"/>
+                        <field name="uom_id"/>
+                        <field name="picking_id"/>
+                        <field name="operation_id"/>
+                        <field name="reason_id"/>
+                        <field name="return_product_id"
+                               invisible="not different_return_product"
+                               optional="hide"/>
+                        <field name="exchange_product_id"
+                               invisible="not different_return_product"
+                               optional="hide"/>
+                        <field name="different_return_product" column_invisible="1"/>
+                        <field name="carrier_id" optional="hide"/>
+                        <field name="description" optional="hide"/>
+                        <field name="order_id" column_invisible="1"/>
+                        <field name="sale_line_id" column_invisible="1"/>
+                        <field name="allowed_product_ids" column_invisible="1"/>
+                        <field name="allowed_picking_ids" column_invisible="1"/>
+                        <field name="move_id" column_invisible="1"/>
+                    </list>
+                </field>
+                <group>
+                    <field name="custom_description" placeholder="Additional notes..."/>
+                </group>
+                <group string="Return shipping (optional)">
+                    <group>
+                        <field name="charge_return_shipping"/>
+                        <field name="return_carrier_id" placeholder="Shippo method for return rates"
+                               invisible="not charge_return_shipping"/>
+                        <field name="selected_return_rate_id"
+                               options="{'no_create': True}"
+                               string="Selected rate"
+                               readonly="1"
+                               invisible="not charge_return_shipping"/>
+                        <button name="action_get_return_shipping_rates" type="object"
+                                string="Get return shipping rates" class="btn-link"
+                                invisible="not charge_return_shipping"/>
+                    </group>
+                    <group string="Package" invisible="not charge_return_shipping">
+                        <field name="package_type_id" options="{'no_create': True}" context="{'formatted_display_name': True}"/>
+                        <field name="custom_package"/>
+                        <field name="length" invisible="not custom_package and package_type_id"/>
+                        <field name="width" invisible="not custom_package and package_type_id"/>
+                        <field name="height" invisible="not custom_package and package_type_id"/>
+                        <field name="distance_unit" invisible="not custom_package and package_type_id"/>
+                        <field name="weight"/>
+                        <field name="mass_unit"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="create_and_open_rma" type="object"
+                            string="Create RMA(s)" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Dialog shown when user clicks "Get return shipping rates": package info + list of rates -->
+    <record id="sale_order_rma_wizard_view_form_rate_selection" model="ir.ui.view">
+        <field name="name">sale.order.rma.wizard.view.form.rate.selection</field>
+        <field name="model">sale.order.rma.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Select return shipping rate" class="o_dialog_size_lg">
+                <group string="Package">
+                    <group>
+                        <field name="package_type_id" options="{'no_create': True}" context="{'formatted_display_name': True}"/>
+                        <field name="custom_package"/>
+                        <field name="length" invisible="not custom_package and package_type_id"/>
+                        <field name="width" invisible="not custom_package and package_type_id"/>
+                        <field name="height" invisible="not custom_package and package_type_id"/>
+                        <field name="distance_unit" invisible="not custom_package and package_type_id"/>
+                        <field name="weight"/>
+                        <field name="mass_unit"/>
+                    </group>
+                </group>
+                <group string="Return shipping rates">
+                    <field name="return_rate_line_ids" nolabel="1" readonly="1">
+                        <list create="0" delete="0">
+                            <button name="action_select_rate" type="object" string="Select" class="btn-primary" icon="fa-check"/>
+                            <field name="carrier"/>
+                            <field name="service_name"/>
+                            <field name="amount"/>
+                            <field name="currency"/>
+                        </list>
+                    </field>
+                </group>
+                <footer>
+                    <button name="action_get_return_shipping_rates" type="object"
+                            string="Refresh rates" class="btn-secondary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

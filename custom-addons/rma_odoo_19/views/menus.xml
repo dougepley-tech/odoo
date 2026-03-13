@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Top-level RMA menu -->
+    <menuitem id="rma_menu_root"
+              name="RMA"
+              web_icon="rma_odoo_19,static/description/icon.png"
+              sequence="45"/>
+
+    <!-- RMA > RMAs -->
+    <menuitem id="rma_menu_rma"
+              name="RMAs"
+              parent="rma_menu_root"
+              action="rma_action"
+              sequence="10"/>
+
+    <!-- RMA > Reporting (immediately left of Configuration, per standard Odoo layout) -->
+    <menuitem id="rma_menu_reporting"
+              name="Reporting"
+              parent="rma_menu_root"
+              sequence="25"/>
+    <menuitem id="rma_menu_reporting_analysis"
+              name="RMA Analysis"
+              parent="rma_menu_reporting"
+              action="rma_reporting_action"
+              sequence="10"/>
+    <menuitem id="rma_menu_reporting_created"
+              name="Created RMA's by Date"
+              parent="rma_menu_reporting"
+              action="rma_reporting_created_action"
+              sequence="15"/>
+    <menuitem id="rma_menu_reporting_open"
+              name="Open RMA's by Date"
+              parent="rma_menu_reporting"
+              action="rma_reporting_open_action"
+              sequence="20"/>
+    <menuitem id="rma_menu_reporting_by_product"
+              name="By Product"
+              parent="rma_menu_reporting"
+              action="rma_reporting_by_product_action"
+              sequence="25"/>
+
+    <!-- RMA > Configuration (Manager only; RMA User cannot see this menu) -->
+    <menuitem id="rma_menu_config"
+              name="Configuration"
+              parent="rma_menu_root"
+              sequence="30"
+              groups="rma_odoo_19.group_rma_manager"/>
+
+    <menuitem id="rma_menu_operation_list"
+              name="Operations"
+              parent="rma_menu_config"
+              action="rma_operation_action"
+              sequence="5"/>
+
+    <menuitem id="rma_menu_reason_list"
+              name="Reasons"
+              parent="rma_menu_config"
+              action="rma_reason_action"
+              sequence="7"/>
+
+    <menuitem id="rma_menu_teams"
+              name="Teams"
+              parent="rma_menu_config"
+              action="rma_team_action"
+              sequence="10"/>
+
+    <menuitem id="rma_menu_tags"
+              name="Tags"
+              parent="rma_menu_config"
+              action="rma_tag_action"
+              sequence="20"/>
+
+    <menuitem id="rma_menu_finalization"
+              name="Finalization Reasons"
+              parent="rma_menu_config"
+              action="rma_finalization_action"
+              sequence="30"/>
+
+    <menuitem id="rma_menu_void_reasons"
+              name="Void Reasons"
+              parent="rma_menu_config"
+              action="rma_void_reason_action"
+              sequence="35"/>
+
+    <menuitem id="rma_menu_settings"
+              name="Settings"
+              parent="rma_menu_config"
+              action="rma_config_settings_action"
+              sequence="100"/>
+
+</odoo>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="stock_return_picking_form_rma" model="ir.ui.view">
+        <field name="name">stock.return.picking.form.rma</field>
+        <field name="model">stock.return.picking</field>
+        <field name="inherit_id" ref="stock.view_stock_return_picking_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='product_return_moves']" position="before">
+                <group invisible="picking_type_code != 'outgoing'">
+                    <field name="create_rma"/>
+                    <field name="rma_operation_id"
+                           invisible="not create_rma"/>
+                </group>
+            </xpath>
+            <xpath expr="//field[@name='product_return_moves']/list" position="inside">
+                <field name="rma_operation_id"
+                       invisible="not parent.create_rma"
+                       optional="show"/>
+                <field name="return_product_id"
+                       invisible="not different_return_product"
+                       optional="hide"/>
+                <field name="exchange_product_id"
+                       invisible="not different_return_product"
+                       optional="hide"/>
+                <field name="different_return_product" column_invisible="1"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <record id="rma_void_reason_duplicate" model="rma.void.reason">
+        <field name="sequence">10</field>
+        <field name="name">Duplicate RMA</field>
+    </record>
+
+    <record id="rma_void_reason_customer_request" model="rma.void.reason">
+        <field name="sequence">20</field>
+        <field name="name">Customer Request</field>
+    </record>
+
+    <record id="rma_void_reason_entered_in_error" model="rma.void.reason">
+        <field name="sequence">30</field>
+        <field name="name">Entered in Error</field>
+    </record>
+
+    <record id="rma_void_reason_other" model="rma.void.reason">
+        <field name="sequence">40</field>
+        <field name="name">Other</field>
+    </record>
+
+</odoo>

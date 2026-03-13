@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="rma_return_shipping_wizard_view_form" model="ir.ui.view">
+        <field name="name">rma.return.shipping.wizard.view.form</field>
+        <field name="model">rma.return.shipping.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <group invisible="state != 'init'">
+                    <group string="RMA Details">
+                        <field name="rma_id" readonly="1"/>
+                        <field name="partner_id" readonly="1"/>
+                        <field name="warehouse_id" readonly="1"/>
+                    </group>
+                    <group string="Shipping Options">
+                        <field name="carrier_id" required="state == 'init'"/>
+                        <field name="label_format"/>
+                    </group>
+                </group>
+                <group invisible="state != 'rates'">
+                    <p class="text-muted">
+                        Select a rate below and click "Generate Label" to create
+                        the return shipping label.
+                    </p>
+                </group>
+                <field name="rate_line_ids" invisible="state != 'rates'">
+                    <list editable="bottom" create="false" delete="false">
+                        <field name="carrier_name" readonly="1"/>
+                        <field name="service_name" readonly="1"/>
+                        <field name="amount" readonly="1"/>
+                        <field name="currency" readonly="1"/>
+                        <field name="estimated_days" readonly="1"/>
+                        <button name="action_select_rate" type="object"
+                                string="Select" icon="fa-check"
+                                invisible="is_selected"/>
+                        <field name="is_selected" column_invisible="1"/>
+                        <field name="shippo_rate_id" column_invisible="1"/>
+                    </list>
+                </field>
+                <group invisible="state != 'done'">
+                    <div class="alert alert-success" role="alert">
+                        <strong>Label Generated Successfully!</strong>
+                        <br/>
+                        Carrier: <field name="selected_rate_carrier" readonly="1" nolabel="1"/>
+                        <br/>
+                        Cost: $<field name="selected_rate_amount" readonly="1" nolabel="1"/>
+                    </div>
+                </group>
+                <field name="state" invisible="1"/>
+                <footer>
+                    <button name="action_get_rates" type="object"
+                            string="Get Rates" class="btn-primary"
+                            invisible="state != 'init'"/>
+                    <button name="action_generate_label" type="object"
+                            string="Generate Label" class="btn-primary"
+                            invisible="state != 'rates'"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="rma_return_shipping_wizard_action" model="ir.actions.act_window">
+        <field name="name">Generate Return Shipping Label</field>
+        <field name="res_model">rma.return.shipping.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

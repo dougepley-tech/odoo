@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!-- Credit Return: receive item + issue refund immediately on confirm -->
+    <record id="rma_operation_credit" model="rma.operation">
+        <field name="name">Credit Return</field>
+        <field name="action_create_receipt">automatic_on_confirm</field>
+        <field name="action_create_delivery" eval="False"/>
+        <field name="action_create_refund">automatic_on_confirm</field>
+    </record>
+
+    <!-- Replacement: receive item then send same product back -->
+    <record id="rma_operation_replacement" model="rma.operation">
+        <field name="name">Replacement</field>
+        <field name="action_create_receipt">automatic_on_confirm</field>
+        <field name="action_create_delivery">manual_after_receipt</field>
+        <field name="action_create_refund" eval="False"/>
+    </record>
+
+    <!-- Exchange / Substitution: receive item then send different product -->
+    <record id="rma_operation_exchange" model="rma.operation">
+        <field name="name">Exchange / Substitution</field>
+        <field name="action_create_receipt">automatic_on_confirm</field>
+        <field name="action_create_delivery">manual_after_receipt</field>
+        <field name="action_create_refund" eval="False"/>
+        <field name="different_return_product" eval="True"/>
+    </record>
+
+    <!-- Service products for deduction lines on refunds -->
+    <record id="product_restocking_fee" model="product.product">
+        <field name="name">Restocking Fee</field>
+        <field name="type">service</field>
+        <field name="list_price">0</field>
+        <field name="sale_ok" eval="False"/>
+        <field name="purchase_ok" eval="False"/>
+    </record>
+
+    <record id="product_return_shipping_fee" model="product.product">
+        <field name="name">Return Shipping Fee</field>
+        <field name="type">service</field>
+        <field name="list_price">0</field>
+        <field name="sale_ok" eval="False"/>
+        <field name="purchase_ok" eval="False"/>
+    </record>
+
+</odoo>

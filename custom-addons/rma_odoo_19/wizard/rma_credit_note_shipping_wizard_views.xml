@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="rma_credit_note_shipping_wizard_view_form" model="ir.ui.view">
+        <field name="name">rma.credit.note.shipping.wizard.form</field>
+        <field name="model">rma.credit.note.shipping.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <group invisible="state != 'init'">
+                    <group>
+                        <field name="carrier_id"/>
+                        <field name="rma_id" readonly="1"/>
+                        <field name="credit_note_id" readonly="1"/>
+                    </group>
+                    <group string="Package">
+                        <field name="package_type_id" options="{'no_create': True}" context="{'formatted_display_name': True}"/>
+                        <field name="custom_package"/>
+                        <field name="length" invisible="not custom_package and package_type_id"/>
+                        <field name="width" invisible="not custom_package and package_type_id"/>
+                        <field name="height" invisible="not custom_package and package_type_id"/>
+                        <field name="distance_unit" invisible="not custom_package and package_type_id"/>
+                        <field name="weight"/>
+                        <field name="mass_unit"/>
+                    </group>
+                </group>
+                <group invisible="state != 'rates'" string="Rates">
+                    <field name="rate_line_ids" nolabel="1">
+                        <list string="Rates" create="0" delete="0" editable="bottom">
+                            <field name="carrier_name" string="Provider" readonly="1"/>
+                            <field name="service_name" string="Service Level" readonly="1"/>
+                            <field name="estimated_days" string="Est. Days" readonly="1"/>
+                            <field name="amount" string="Amount" readonly="1"/>
+                            <field name="markup" string="Markup" readonly="1"/>
+                            <field name="final_amount" string="Final Amount" readonly="1"/>
+                            <field name="currency" string="Currency" readonly="1"/>
+                            <button name="action_select_rate"
+                                    type="object"
+                                    string="Select Rate"
+                                    class="btn-primary"
+                                    icon="fa-check"/>
+                        </list>
+                    </field>
+                </group>
+                <field name="state" invisible="1"/>
+                <footer>
+                    <button name="action_get_rates" type="object"
+                            string="Get Rates" class="btn-primary"
+                            invisible="state != 'init'"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="rma_credit_note_shipping_wizard_action" model="ir.actions.act_window">
+        <field name="name">Select Return Shipping Rate</field>
+        <field name="res_model">rma.credit.note.shipping.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

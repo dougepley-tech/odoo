@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="res_config_settings_view_form_rma" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.rma</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="RMA" string="RMA"
+                     name="rma_odoo_19">
+                    <block title="General">
+                        <setting string="Group RMA Returns"
+                                 help="Group returns by customer address and warehouse">
+                            <field name="rma_return_grouping"/>
+                        </setting>
+                        <setting string="Manual Finalization"
+                                 help="Allow finishing RMA by choosing a reason">
+                            <field name="group_rma_manual_finalization"/>
+                        </setting>
+                        <setting string="Default RMA Location"
+                                 help="Stock location used for all RMAs. Users will not need to select a location.">
+                            <field name="rma_default_location_id"/>
+                        </setting>
+                        <setting string="Default Restocking Fee %"
+                                 help="Default restocking fee percentage for new RMAs">
+                            <field name="rma_restocking_fee_pct"/>
+                        </setting>
+                        <setting string="Require RMA Reason"
+                                 help="Require a reason when creating an RMA">
+                            <field name="is_rma_reason_required"/>
+                        </setting>
+                    </block>
+                    <block title="Email Notifications">
+                        <setting string="Confirmation Email"
+                                 help="Send email when RMA is confirmed">
+                            <field name="send_rma_confirmation"/>
+                            <div invisible="not send_rma_confirmation">
+                                <field name="rma_mail_confirmation_template_id"/>
+                            </div>
+                        </setting>
+                        <setting string="Receipt Confirmation Email"
+                                 help="Send email when RMA items are received">
+                            <field name="send_rma_receipt_confirmation"/>
+                            <div invisible="not send_rma_receipt_confirmation">
+                                <field name="rma_mail_receipt_confirmation_template_id"/>
+                            </div>
+                        </setting>
+                        <setting string="Draft Notification Email"
+                                 help="Send email when customer places an RMA from portal">
+                            <field name="send_rma_draft_confirmation"/>
+                            <div invisible="not send_rma_draft_confirmation">
+                                <field name="rma_mail_draft_confirmation_template_id"/>
+                            </div>
+                        </setting>
+                    </block>
+                    <block title="Delivery Carrier Strategy">
+                        <setting string="RMA Delivery Method"
+                                 help="How to select carrier for RMA delivery">
+                            <field name="rma_delivery_strategy"/>
+                            <div invisible="rma_delivery_strategy not in ('fixed_method', 'mixed_method')">
+                                <field name="rma_fixed_delivery_method"/>
+                            </div>
+                        </setting>
+                        <setting string="RMA Reception Method"
+                                 help="How to select carrier for RMA reception">
+                            <field name="rma_reception_strategy"/>
+                            <div invisible="rma_reception_strategy not in ('fixed_method', 'mixed_method')">
+                                <field name="rma_fixed_reception_strategy"/>
+                            </div>
+                        </setting>
+                    </block>
+                    <block title="Portal">
+                        <setting string="Full Page RMA Creation"
+                                 help="Show a full page form for RMA creation from portal instead of popup">
+                            <field name="show_full_page_sale_rma"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="rma_config_settings_action" model="ir.actions.act_window">
+        <field name="name">RMA Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">main</field>
+        <field name="context">{'module': 'rma_odoo_19'}</field>
+    </record>
+
+</odoo>

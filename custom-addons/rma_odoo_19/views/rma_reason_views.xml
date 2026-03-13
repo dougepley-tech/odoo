@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="rma_reason_view_form" model="ir.ui.view">
+        <field name="name">rma.reason.view.form</field>
+        <field name="model">rma.reason</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="description"/>
+                        <field name="company_id" groups="base.group_multi_company"/>
+                        <field name="allowed_operation_ids" widget="many2many_tags"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="rma_reason_view_list" model="ir.ui.view">
+        <field name="name">rma.reason.view.list</field>
+        <field name="model">rma.reason</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="description"/>
+                <field name="allowed_operation_ids" widget="many2many_tags"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="rma_reason_action" model="ir.actions.act_window">
+        <field name="name">RMA Reasons</field>
+        <field name="res_model">rma.reason</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+</odoo>

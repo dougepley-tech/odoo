@@ -1,0 +1,31 @@
+/* Backend: RMA form Products list – Product column stays wide and does not shrink on click */
+.o_rma_products_list {
+    .o_list_table {
+        table-layout: fixed;
+        th:first-child,
+        td:first-child {
+            width: 450px !important;
+            min-width: 450px !important;
+            max-width: none;
+        }
+    }
+}
+
+.o_rma_portal_form {
+    .o_rma_product_line {
+        border-bottom: 1px solid #dee2e6;
+        padding: 0.75rem 0;
+
+        &:last-child {
+            border-bottom: none;
+        }
+    }
+
+    .o_rma_reason_field {
+        transition: all 0.3s ease;
+    }
+
+    .o_rma_qty_input {
+        max-width: 120px;
+    }
+}

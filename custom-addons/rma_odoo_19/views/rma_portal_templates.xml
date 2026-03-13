@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Portal: RMA List -->
+    <template id="portal_my_home_rma"
+              name="Show RMAs"
+              inherit_id="portal.portal_my_home"
+              customize_show="True"
+              priority="90">
+        <xpath expr="//div[hasclass('o_portal_docs')]" position="before">
+            <t t-set="portal_client_category_enable" t-value="True"/>
+        </xpath>
+        <div id="portal_client_category" position="inside">
+            <t t-call="portal.portal_docs_entry">
+                <t t-set="icon" t-value="'/rma_odoo_19/static/description/icon.png'"/>
+                <t t-set="title">RMAs</t>
+                <t t-set="url" t-value="'/my/rmas'"/>
+                <t t-set="text">Follow your return merchandise authorizations</t>
+                <t t-set="placeholder_count" t-value="'rma_count'"/>
+            </t>
+        </div>
+    </template>
+
+    <template id="portal_my_rmas" name="My RMAs">
+        <t t-call="portal.portal_layout">
+            <t t-set="breadcrumbs_searchbar" t-value="True"/>
+            <t t-call="portal.portal_searchbar">
+                <t t-set="title">RMAs</t>
+            </t>
+            <t t-if="not rmas">
+                <div class="alert alert-warning mt8" role="alert">
+                    There are currently no RMAs for your account.
+                </div>
+            </t>
+            <t t-if="rmas" t-call="portal.portal_table">
+                <thead>
+                    <tr class="active">
+                        <th>RMA #</th>
+                        <th>Date</th>
+                        <th>Product</th>
+                        <th>Operation</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <t t-foreach="rmas" t-as="rma">
+                    <tr>
+                        <td>
+                            <a t-att-href="rma.get_portal_url()">
+                                <t t-out="rma.name"/>
+                            </a>
+                        </td>
+                        <td><span t-field="rma.date" t-options='{"widget": "date"}'/></td>
+                        <td><span t-field="rma.product_id"/></td>
+                        <td><span t-field="rma.operation_id"/></td>
+                        <td>
+                            <span class="badge rounded-pill text-bg-info">
+                                <t t-out="dict(rma._fields['state'].selection).get(rma.state)"/>
+                            </span>
+                        </td>
+                    </tr>
+                </t>
+            </t>
+        </t>
+    </template>
+
+    <!-- Portal: RMA Detail -->
+    <template id="portal_my_rma" name="My RMA">
+        <t t-call="portal.portal_layout">
+            <t t-set="o_portal_fullwidth_alert" groups="rma_odoo_19.group_rma_user">
+                <t t-call="portal.portal_back_in_edit_mode">
+                    <t t-set="backend_url"
+                       t-value="'/odoo/rma/%s' % (rma.id)"/>
+                </t>
+            </t>
+            <div class="container">
+                <div class="card mt-3">
+                    <div class="card-header bg-white">
+                        <div class="row">
+                            <div class="col-12 col-lg-6">
+                                <h4 class="mb-0">
+                                    <t t-out="rma.name"/>
+                                    <span class="badge rounded-pill text-bg-info ms-1">
+                                        <t t-out="dict(rma._fields['state'].selection).get(rma.state)"/>
+                                    </span>
+                                </h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-4">
+                            <div class="col-12 col-lg-6">
+                                <strong>Date:</strong>
+                                <span t-field="rma.date" t-options='{"widget": "date"}'/>
+                                <br/>
+                                <strong>Product:</strong>
+                                <span t-field="rma.product_id"/>
+                                <br/>
+                                <strong>Quantity:</strong>
+                                <span t-field="rma.product_uom_qty"/>
+                                <span t-field="rma.product_uom"/>
+                            </div>
+                            <div class="col-12 col-lg-6">
+                                <strong>Operation:</strong>
+                                <span t-field="rma.operation_id"/>
+                                <br/>
+                                <t t-if="rma.reason_id">
+                                    <strong>Reason:</strong>
+                                    <span t-field="rma.reason_id"/>
+                                    <br/>
+                                </t>
+                                <t t-if="rma.return_tracking_number">
+                                    <strong>Return Tracking:</strong>
+                                    <a t-att-href="rma.return_tracking_url"
+                                       target="_blank">
+                                        <t t-out="rma.return_tracking_number"/>
+                                    </a>
+                                </t>
+                            </div>
+                        </div>
+                        <t t-if="rma.description">
+                            <h5>Notes</h5>
+                            <div t-field="rma.description"/>
+                        </t>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <h4>Message History</h4>
+                    <t t-call="portal.message_thread">
+                        <t t-set="object" t-value="rma"/>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </template>
+
+</odoo>

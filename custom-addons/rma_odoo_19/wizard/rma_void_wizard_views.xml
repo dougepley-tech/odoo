@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="rma_void_wizard_view_form" model="ir.ui.view">
+        <field name="name">rma.void.wizard.view.form</field>
+        <field name="model">rma.void.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Void RMA">
+                <group>
+                    <field name="void_reason_id"/>
+                </group>
+                <footer>
+                    <button name="action_void_confirm" type="object"
+                            string="Void" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="rma_void_wizard_action" model="ir.actions.act_window">
+        <field name="name">Void RMA</field>
+        <field name="res_model">rma.void.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>
