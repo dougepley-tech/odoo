@@ -16,6 +16,9 @@
                     readonly="state not in ('draft', 'sent')"
                 />
             </field>
+            <xpath expr="//field[@name='product_uom_id']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
             <xpath expr="//form//header" position="inside">
                 <button
                     name="action_remove_delivery_block"
