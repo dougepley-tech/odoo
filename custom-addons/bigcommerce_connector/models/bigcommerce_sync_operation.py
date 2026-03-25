@@ -40,6 +40,7 @@ class BigCommerceSyncOperation(models.Model):
         ('running', 'Running'),
         ('completed', 'Completed'),
         ('completed_with_warnings', 'Completed with Warnings'),
+        ('completed_with_errors', 'Completed with Errors'),
         ('failed', 'Failed'),
         ('cancelled', 'Cancelled'),
     ], string='Status', default='running', required=True, index=True)
@@ -109,6 +110,8 @@ class BigCommerceSyncOperation(models.Model):
                 record.status_badge = 'Cancelled'
             elif record.state == 'failed':
                 record.status_badge = 'Failed'
+            elif record.state == 'completed_with_errors':
+                record.status_badge = f'Errors ({record.error_count})'
             elif record.state == 'completed_with_warnings':
                 record.status_badge = f'Warning ({record.warning_count})'
             elif record.state == 'completed':
@@ -166,7 +169,7 @@ class BigCommerceSyncOperation(models.Model):
             record.end_date = fields.Datetime.now()
             # Determine final state based on errors and warnings
             if record.error_count > 0:
-                record.state = 'failed'
+                record.state = 'completed_with_errors'
             elif record.warning_count > 0:
                 record.state = 'completed_with_warnings'
             else:

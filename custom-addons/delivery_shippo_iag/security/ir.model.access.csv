@@ -12,4 +12,5 @@ access_shippo_markup_rule_manager,shippo.markup.rule.manager,model_shippo_markup
 access_shippo_rate_wizard_user,shippo.rate.wizard.user,model_shippo_rate_wizard,stock.group_stock_user,1,1,1,1
 access_shippo_rate_wizard_line_user,shippo.rate.wizard.line.user,model_shippo_rate_wizard_line,stock.group_stock_user,1,1,1,1
 access_shippo_cancel_shipment_wizard_user,shippo.cancel.shipment.wizard.user,model_shippo_cancel_shipment_wizard,stock.group_stock_user,1,1,1,1
+access_shippo_validate_warning_wizard_user,shippo.validate.warning.wizard.user,model_shippo_validate_warning_wizard,stock.group_stock_user,1,1,1,1
 access_shippo_settings_wizard_user,shippo.settings.wizard.user,model_shippo_settings_wizard,stock.group_stock_manager,1,1,1,1

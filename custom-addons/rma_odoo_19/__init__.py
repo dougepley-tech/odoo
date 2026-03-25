@@ -1,3 +1,4 @@
+from . import controllers
 from . import models
 from . import wizard
 
@@ -22,7 +23,9 @@ def post_init_hook(env):
                 }
             )
             wh.rma_loc_id = loc
-        if not wh.rma:
-            wh.with_context(rma_post_init_hook=True).write({"rma": True})
-        wh._create_or_update_sequences_and_picking_types()
-        wh.with_context(rma_post_init_hook=True)._create_or_update_route()
+        new_vals = wh._create_or_update_sequences_and_picking_types()
+        if new_vals:
+            wh.write(new_vals)
+    # RMA routes are created when the user enables RMA on a warehouse (depends:
+    # ["rma"]). Do NOT call _create_or_update_route here—it causes KeyError
+    # during install when mrp/purchase_stock are present.

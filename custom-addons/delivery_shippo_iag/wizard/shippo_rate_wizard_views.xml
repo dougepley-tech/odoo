@@ -40,8 +40,8 @@
                 <field name="service_name" string="Service Level"/>
                 <field name="estimated_days" string="Est. Days"/>
                 <field name="amount"/>
-                <field name="markup"/>
-                <field name="final_amount"/>
+                <field name="markup" column_invisible="parent.picking_id"/>
+                <field name="final_amount" column_invisible="parent.picking_id"/>
                 <field name="currency"/>
                 <field name="rate_object_id" column_invisible="True"/>
                 <button name="action_select_rate" string="Select Rate" type="object" class="btn-primary" icon="fa-check"/>

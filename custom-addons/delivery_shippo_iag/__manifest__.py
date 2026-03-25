@@ -37,6 +37,7 @@ Shippo Odoo 19 Integration
         'views/shippo_menus.xml',
         'wizard/shippo_rate_wizard_views.xml',
         'wizard/shippo_cancel_shipment_wizard_views.xml',
+        'wizard/shippo_validate_warning_wizard_views.xml',
         'wizard/shippo_settings_wizard_views.xml',
     ],
     'external_dependencies': {

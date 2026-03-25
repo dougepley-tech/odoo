@@ -38,7 +38,8 @@
         <field name="name">rma.operation.view.list</field>
         <field name="model">rma.operation</field>
         <field name="arch" type="xml">
-            <list>
+            <list default_order="sequence, name">
+                <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="action_create_receipt"/>
                 <field name="action_create_delivery"/>

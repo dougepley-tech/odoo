@@ -6,7 +6,7 @@ class StockWarehouse(models.Model):
 
     rma = fields.Boolean(
         "RMA",
-        default=True,
+        default=False,
         help="RMA related products can be stored in this warehouse.",
     )
     rma_in_type_id = fields.Many2one(
@@ -178,7 +178,7 @@ class StockWarehouse(models.Model):
             },
             "rma_out_route_id": {
                 "routing_key": "rma_out",
-                "depends": ["active"],
+                "depends": ["active", "rma"],
                 "route_update_values": {
                     "name": self._format_routename("RMA Out"),
                     "active": self.active,
@@ -203,26 +203,30 @@ class StockWarehouse(models.Model):
         res = super().get_rules_dict()
         customer_loc, supplier_loc = self._get_partner_locations()
         for warehouse in self:
-            if not warehouse.rma_loc_id or not warehouse.rma_in_type_id:
-                continue
-            res[warehouse.id].update(
-                {
-                    "rma_in": [
-                        self.Routing(
-                            customer_loc,
-                            warehouse.rma_loc_id,
-                            warehouse.rma_in_type_id,
-                            "pull",
-                        )
-                    ],
-                    "rma_out": [
-                        self.Routing(
-                            warehouse.rma_loc_id,
-                            customer_loc,
-                            warehouse.rma_out_type_id,
-                            "pull",
-                        )
-                    ],
-                }
-            )
+            # Always add rma_in/rma_out keys to avoid KeyError in
+            # _create_or_update_route when processing RMA routes.
+            if warehouse.rma_loc_id and warehouse.rma_in_type_id:
+                res[warehouse.id].update(
+                    {
+                        "rma_in": [
+                            self.Routing(
+                                customer_loc,
+                                warehouse.rma_loc_id,
+                                warehouse.rma_in_type_id,
+                                "pull",
+                            )
+                        ],
+                        "rma_out": [
+                            self.Routing(
+                                warehouse.rma_loc_id,
+                                customer_loc,
+                                warehouse.rma_out_type_id,
+                                "pull",
+                            )
+                        ],
+                    }
+                )
+            else:
+                res[warehouse.id].setdefault("rma_in", [])
+                res[warehouse.id].setdefault("rma_out", [])
         return res

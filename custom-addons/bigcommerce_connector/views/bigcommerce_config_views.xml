@@ -118,6 +118,15 @@
                                     <field name="sync_failure_notification_emails" placeholder="email1@example.com, email2@example.com"/>
                                     <field name="sync_failure_notification_partner_ids" widget="many2many_tags" options="{'no_create': False}" placeholder="Or add contacts to notify when an auto sync fails..."/>
                                 </group>
+                                <group string="Failure notification Discuss">
+                                    <field name="sync_failure_notification_channel_ids" widget="many2many_tags" 
+                                           options="{'no_create': True}" 
+                                           placeholder="Discuss channels to post failure messages to..."
+                                           domain="[('channel_type', 'in', ['channel', 'group'])]"/>
+                                    <field name="sync_failure_notification_user_ids" widget="many2many_tags" 
+                                           options="{'no_create': True}" 
+                                           placeholder="Users to send Discuss notification to..."/>
+                                </group>
                                 <group string="Sync Direction">
                                     <field name="sync_direction_products"/>
                                     <field name="sync_direction_orders"/>

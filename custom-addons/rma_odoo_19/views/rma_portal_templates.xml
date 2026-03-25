@@ -133,4 +133,113 @@
         </t>
     </template>
 
+    <!-- Portal: RMA Request Form (from Sale Order) -->
+    <template id="portal_order_rma_form" name="Request RMA">
+        <t t-call="portal.portal_layout">
+            <t t-set="breadcrumbs_searchbar" t-value="True"/>
+            <t t-call="portal.portal_searchbar">
+                <t t-set="title">Request Return (RMA)</t>
+            </t>
+            <div class="container">
+                <div class="card mt-3">
+                    <div class="card-header bg-white">
+                        <h4 class="mb-0">
+                            Request Return for Order
+                            <t t-out="sale_order.name"/>
+                        </h4>
+                    </div>
+                    <div class="card-body">
+                        <t t-if="error">
+                            <div class="alert alert-danger" role="alert">
+                                <t t-out="error"/>
+                            </div>
+                        </t>
+                        <t t-if="rma_lines">
+                            <form method="POST" class="o_rma_portal_form"
+                                  t-att-action="sale_order.get_portal_url(suffix='/rma')">
+                                <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+                                <div class="mb-4">
+                                    <label class="form-label" for="operation_id">Return Operation</label>
+                                    <select name="operation_id" id="operation_id" class="form-select" required="1">
+                                        <option value="">— Select —</option>
+                                        <t t-foreach="operations" t-as="op">
+                                            <option t-att-value="op.id"
+                                                    t-att-selected="submitted_operation_id and str(op.id) == submitted_operation_id">
+                                                <t t-out="op.name"/>
+                                            </option>
+                                        </t>
+                                    </select>
+                                </div>
+                                <div class="mb-4 o_rma_reason_field">
+                                    <label class="form-label" for="reason_id">
+                                        Return Reason
+                                        <t t-if="not is_reason_required"> (optional)</t>
+                                    </label>
+                                    <select name="reason_id" id="reason_id" class="form-select"
+                                            t-att-required="'1' if is_reason_required else None">
+                                        <option value="">— None —</option>
+                                        <t t-foreach="reasons" t-as="r">
+                                            <option t-att-value="r.id"
+                                                    t-att-selected="submitted_reason_id and str(r.id) == submitted_reason_id">
+                                                <t t-out="r.name"/>
+                                            </option>
+                                        </t>
+                                    </select>
+                                </div>
+                                <h5 class="mb-3">Select items to return</h5>
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Product</th>
+                                            <th>Max (units)</th>
+                                            <th>Quantity to Return</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <t t-foreach="rma_lines" t-as="line">
+                                            <tr>
+                                                <td><t t-out="line['product'].display_name"/></td>
+                                                <td><t t-out="line['max_qty_int']"/></td>
+                                                <td>
+                                                    <input type="number"
+                                                           step="1"
+                                                           min="0"
+                                                           t-att-max="line['max_qty_int']"
+                                                           t-att-name="'qty_' + str(line['index'])"
+                                                           t-att-value="int(float(line.get('submitted_qty') or 0))"
+                                                           class="form-control o_rma_qty_input"
+                                                           t-att-data-max-qty="line['max_qty_int']"/>
+
+                                                </td>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                                <div class="mb-4">
+                                    <label class="form-label" for="customer_notes">
+                                        Notes about your return
+                                    </label>
+                                    <textarea name="customer_notes"
+                                              id="customer_notes"
+                                              class="form-control"
+                                              rows="4"
+                                              maxlength="4000"
+                                              placeholder="Describe the issue, condition of items, or anything else we should know (optional)."><t t-out="submitted_notes or ''"/></textarea>
+                                </div>
+                                <div class="mt-4">
+                                    <a t-att-href="sale_order.get_portal_url()" class="btn btn-secondary me-2">
+                                        Cancel
+                                    </a>
+                                    <button type="submit" class="btn btn-primary">
+                                        Submit Return Request
+                                    </button>
+                                </div>
+                            </form>
+                        </t>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+
 </odoo>

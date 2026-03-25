@@ -8,7 +8,7 @@
             <list string="Sync Operations" default_order="start_date desc" 
                   decoration-success="state == 'completed'" 
                   decoration-warning="state == 'completed_with_warnings'" 
-                  decoration-danger="state == 'failed'"
+                  decoration-danger="state in ('failed', 'completed_with_errors')"
                   decoration-muted="state in ('running', 'cancelled')">
                 <field name="start_date" string="Date &amp; Time"/>
                 <field name="sync_type"/>
@@ -16,7 +16,7 @@
                 <field name="state" widget="badge" 
                        decoration-success="state == 'completed'" 
                        decoration-warning="state == 'completed_with_warnings'" 
-                       decoration-danger="state == 'failed'"
+                       decoration-danger="state in ('failed', 'completed_with_errors')"
                        decoration-info="state == 'running'"/>
                 <field name="items_synced" string="Total Synced"/>
                 <field name="items_created" optional="hide"/>
@@ -47,7 +47,7 @@
                     <button name="action_cancel" string="Cancel" type="object" class="btn-danger" invisible="state != 'running'"/>
                     <button name="action_view_logs" string="View All Logs" type="object" class="btn-primary"/>
                     <button name="action_view_error_logs" string="View Error Logs" type="object" class="btn-danger" invisible="error_count == 0"/>
-                    <field name="state" widget="statusbar" statusbar_visible="running,completed,completed_with_warnings,failed,cancelled"/>
+                    <field name="state" widget="statusbar" statusbar_visible="running,completed,completed_with_warnings,completed_with_errors,failed,cancelled"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -125,6 +125,7 @@
                 
                 <filter string="Failed" name="failed" domain="[('state', '=', 'failed')]"/>
                 <filter string="With Warnings" name="warnings" domain="[('state', '=', 'completed_with_warnings')]"/>
+                <filter string="With Errors" name="with_errors" domain="[('state', '=', 'completed_with_errors')]"/>
                 <filter string="Completed" name="completed" domain="[('state', '=', 'completed')]"/>
                 <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
                 <filter string="Cancelled" name="cancelled" domain="[('state', '=', 'cancelled')]"/>

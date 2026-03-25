@@ -14,8 +14,7 @@ action['type'] = 'ir.actions.act_window'
 # Force context so default filter and pivot layout apply (override any saved favorite)
 ctx = action.get('context') or {}
 if isinstance(ctx, str):
-    import ast
-    ctx = ast.literal_eval(ctx) if ctx.strip() else {}
+    ctx = {}  # Stored as string; use empty dict (update below will set desired keys)
 else:
     ctx = dict(ctx)
 ctx.update({
@@ -40,8 +39,7 @@ action['type'] = 'ir.actions.act_window'
 # Force context so default filter and pivot layout apply (override any saved favorite)
 ctx = action.get('context') or {}
 if isinstance(ctx, str):
-    import ast
-    ctx = ast.literal_eval(ctx) if ctx.strip() else {}
+    ctx = {}  # Stored as string; use empty dict (update below will set desired keys)
 else:
     ctx = dict(ctx)
 ctx.update({

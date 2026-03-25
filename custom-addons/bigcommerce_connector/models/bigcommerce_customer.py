@@ -178,7 +178,12 @@ class BigCommerceCustomerSync(models.Model):
             
             # Update sync operation record
             if self.sync_operation_id:
-                state = 'completed_with_warnings' if warnings_count > 0 else 'completed'
+                if self.customers_failed > 0:
+                    state = 'completed_with_errors'
+                elif warnings_count > 0:
+                    state = 'completed_with_warnings'
+                else:
+                    state = 'completed'
                 self.sync_operation_id.write({
                     'state': state,
                     'end_date': fields.Datetime.now(),

@@ -12,7 +12,7 @@ patch(AttachmentList.prototype, {
         if (attachment.uploading) {
             return;
         }
-        // Open attachment in new tab for printing (without download param so browser displays PDF)
+        // Get view URL (without download param so browser displays PDF)
         let viewUrl;
         if (attachment.urlRoute) {
             const params = { ...(attachment.urlQueryParams || {}) };
@@ -23,7 +23,19 @@ patch(AttachmentList.prototype, {
         } else {
             return;
         }
-        window.open(viewUrl, "_blank");
+        // Open in new window and trigger print when loaded (keeps dialog open)
+        const printWin = window.open(viewUrl, "_blank", "width=800,height=600");
+        if (printWin) {
+            printWin.onload = () => {
+                setTimeout(() => {
+                    try {
+                        printWin.print();
+                    } catch {
+                        // Print failed; user can still Ctrl+P in the window
+                    }
+                }, 500);
+            };
+        }
     },
 
     /**

@@ -10,7 +10,9 @@ AWAITING_ACTION_STATES = ["waiting_return", "waiting_replacement", "confirmed"]
 class RmaOperation(models.Model):
     _name = "rma.operation"
     _description = "RMA requested operation"
+    _order = "sequence, name"
 
+    sequence = fields.Integer(default=10)
     active = fields.Boolean(default=True)
     name = fields.Char(required=True, translate=True)
     color = fields.Integer()

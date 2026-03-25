@@ -13,6 +13,7 @@ _logger = logging.getLogger(__name__)
 class BigCommerceConfig(models.Model):
     _name = 'bigcommerce.config'
     _description = 'BigCommerce Configuration'
+    _inherit = ['mail.thread']
     _rec_name = 'name'
 
     name = fields.Char(string='Configuration Name', required=True)
@@ -383,6 +384,22 @@ class BigCommerceConfig(models.Model):
         'partner_id',
         string='Failure notification contacts',
         help='Contacts to email when an auto sync fails or errors. Add partners and/or use the email addresses field above.',
+    )
+    sync_failure_notification_channel_ids = fields.Many2many(
+        'discuss.channel',
+        'bigcommerce_config_sync_failure_channel_rel',
+        'config_id',
+        'channel_id',
+        string='Failure notification channels',
+        help='Discuss channels to post a message to when an auto sync fails or errors.',
+    )
+    sync_failure_notification_user_ids = fields.Many2many(
+        'res.users',
+        'bigcommerce_config_sync_failure_user_rel',
+        'config_id',
+        'user_id',
+        string='Failure notification users',
+        help='Users to send a Discuss notification to when an auto sync fails or errors.',
     )
     
     # Product Mapping
@@ -935,20 +952,9 @@ class BigCommerceConfig(models.Model):
         return False
     
     def _send_sync_failure_email(self, sync_type, error_message=None, details=None, created=None, updated=None, failed=None, sync_name=None):
-        """Send email to configured recipients when an auto sync fails or completes with failures.
+        """Send email and/or Discuss notifications when an auto sync fails or completes with failures.
         Call with error_message when state='error'; or with failed>0 when state='done' but items failed."""
         self.ensure_one()
-        emails = set()
-        if self.sync_failure_notification_emails:
-            for raw in self.sync_failure_notification_emails.replace('\n', ',').split(','):
-                addr = raw.strip()
-                if addr and '@' in addr:
-                    emails.add(addr)
-        partners = self.sync_failure_notification_partner_ids.filtered(lambda p: p.email)
-        for p in partners:
-            emails.add(p.email.strip())
-        if not emails:
-            return
         if error_message:
             subject = f"[BigCommerce] {self.name} - {sync_type} sync failed"
         else:
@@ -972,14 +978,54 @@ class BigCommerceConfig(models.Model):
             if failed is not None:
                 body += f"<li>Failed: {int(failed)}</li>"
             body += "</ul>"
-        try:
-            self.env['mail.mail'].sudo().create({
-                'email_to': ','.join(sorted(emails)),
-                'subject': subject,
-                'body_html': body,
-            }).send()
-        except Exception as e:
-            _logger.warning("Could not send sync failure email: %s", e)
+        # Send email
+        emails = set()
+        if self.sync_failure_notification_emails:
+            for raw in self.sync_failure_notification_emails.replace('\n', ',').split(','):
+                addr = raw.strip()
+                if addr and '@' in addr:
+                    emails.add(addr)
+        partners = self.sync_failure_notification_partner_ids.filtered(lambda p: p.email)
+        for p in partners:
+            emails.add(p.email.strip())
+        if emails:
+            try:
+                self.env['mail.mail'].sudo().create({
+                    'email_to': ','.join(sorted(emails)),
+                    'subject': subject,
+                    'body_html': body,
+                }).send()
+            except Exception as e:
+                _logger.warning("Could not send sync failure email: %s", e)
+        # Send Discuss notifications (channels and users)
+        self._send_sync_failure_discuss(sync_type, subject, body)
+
+    def _send_sync_failure_discuss(self, sync_type, subject, body):
+        """Post failure notification to configured Discuss channels and notify configured users."""
+        self.ensure_one()
+        # Post to channels
+        for channel in self.sync_failure_notification_channel_ids:
+            try:
+                channel.sudo().message_post(
+                    body=body,
+                    subject=subject,
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_comment',
+                )
+            except Exception as e:
+                _logger.warning("Could not post sync failure to channel %s: %s", channel.name, e)
+        # Notify users (in-app notification in Discuss)
+        if self.sync_failure_notification_user_ids:
+            partner_ids = self.sync_failure_notification_user_ids.mapped('partner_id').ids
+            if partner_ids:
+                try:
+                    self.sudo().message_notify(
+                        body=body,
+                        subject=subject,
+                        partner_ids=partner_ids,
+                    )
+                except Exception as e:
+                    _logger.warning("Could not send sync failure notification to users: %s", e)
 
     @api.model
     def _cron_auto_sync_products(self):
@@ -1159,7 +1205,7 @@ class BigCommerceConfig(models.Model):
                 last_sync_op = self.env['bigcommerce.sync.operation'].search([
                     ('sync_type', '=', 'product'),
                     ('config_id', '=', self.id),
-                    ('state', 'in', ['completed', 'completed_with_warnings']),
+                    ('state', 'in', ['completed', 'completed_with_warnings', 'completed_with_errors']),
                     ('end_date', '!=', False),
                 ], order='end_date desc', limit=1)
                 if last_sync_op:
@@ -1214,7 +1260,7 @@ class BigCommerceConfig(models.Model):
                 last_sync_op = self.env['bigcommerce.sync.operation'].search([
                     ('sync_type', '=', 'order'),
                     ('config_id', '=', self.id),
-                    ('state', 'in', ['completed', 'completed_with_warnings']),
+                    ('state', 'in', ['completed', 'completed_with_warnings', 'completed_with_errors']),
                     ('end_date', '!=', False),
                 ], order='end_date desc', limit=1)
                 if last_sync_op:

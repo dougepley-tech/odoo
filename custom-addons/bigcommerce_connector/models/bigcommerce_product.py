@@ -476,9 +476,11 @@ class ProductTemplate(models.Model):
                     sync_images_enabled = config.sync_product_images if config else False
                     bc_product = api.get_product(bc_id, include_images=sync_images_enabled)
                     
-                    # Validate response
+                    # Validate response - product removed from this store, remove the mapping
                     if not bc_product:
-                        failed_configs.append(f"{config.name} (Product not found)")
+                        _logger.info(f"Product {bc_id} not found in {config.name} - removing mapping (product was removed from this store)")
+                        mapping.unlink()
+                        failed_configs.append(f"{config.name} (Product not found - mapping removed)")
                         continue
                     
                     # Ensure bc_product is a dictionary
@@ -522,8 +524,14 @@ class ProductTemplate(models.Model):
                     synced_configs.append(config.name)
                     
                 except Exception as e:
-                    _logger.error(f"Error syncing product {self.id} from BigCommerce config {config.name}: {str(e)}", exc_info=True)
-                    failed_configs.append(f"{config.name} ({str(e)})")
+                    error_str = str(e).lower()
+                    if '404' in error_str or 'not found' in error_str:
+                        _logger.info(f"Product {bc_id} not found in {config.name} (API error) - removing mapping (product was removed from this store)")
+                        mapping.unlink()
+                        failed_configs.append(f"{config.name} (Product not found - mapping removed)")
+                    else:
+                        _logger.error(f"Error syncing product {self.id} from BigCommerce config {config.name}: {str(e)}", exc_info=True)
+                        failed_configs.append(f"{config.name} ({str(e)})")
         else:
             # Legacy path - sync from single configuration
             try:
@@ -1389,7 +1397,7 @@ class BigCommerceProductSync(models.Model):
         last_op = self.env['bigcommerce.sync.operation'].search([
             ('sync_type', '=', 'product'),
             ('config_id', '=', config_id),
-            ('state', 'in', ['completed', 'completed_with_warnings']),
+            ('state', 'in', ['completed', 'completed_with_warnings', 'completed_with_errors']),
         ], order='start_date desc', limit=1)
         if last_op:
             last_ts = last_op.start_date
@@ -1587,7 +1595,7 @@ class BigCommerceProductSync(models.Model):
                 last_sync_op = self.env['bigcommerce.sync.operation'].search([
                     ('sync_type', '=', 'product'),
                     ('config_id', '=', self.config_id.id),
-                    ('state', 'in', ['completed', 'completed_with_warnings']),
+                    ('state', 'in', ['completed', 'completed_with_warnings', 'completed_with_errors']),
                     ('end_date', '!=', False),
                 ], order='end_date desc', limit=1)
                 
@@ -1694,7 +1702,12 @@ class BigCommerceProductSync(models.Model):
 
             # Update sync operation record
             if self.sync_operation_id:
-                state = 'completed_with_warnings' if warnings_count > 0 else 'completed'
+                if self.products_failed > 0:
+                    state = 'completed_with_errors'
+                elif warnings_count > 0:
+                    state = 'completed_with_warnings'
+                else:
+                    state = 'completed'
                 self.sync_operation_id.write({
                     'state': state,
                     'end_date': fields.Datetime.now(),
@@ -1889,6 +1902,37 @@ class BigCommerceProductSync(models.Model):
         self.env.cr.commit()
         
         return True
+    
+    def _remove_stale_mappings_for_product(self, product, synced_config_id):
+        """Remove mappings to stores where the product was deleted (product not found in that store).
+        
+        Called after syncing a product to ensure all sync methods behave the same - stale links
+        to stores where the product was removed are cleaned up.
+        """
+        for mapping in product.bigcommerce_mapping_ids:
+            if mapping.config_id.id == synced_config_id:
+                continue  # Skip the config we just synced from
+            config = mapping.config_id
+            bc_id = mapping.bigcommerce_id
+            if not config or not bc_id:
+                continue
+            try:
+                api = config.get_api_client()
+                bc_product = api.get_product(bc_id, include_images=False)
+                if not bc_product:
+                    _logger.info(f"Product {bc_id} not found in {config.name} - removing mapping (product was removed from this store)")
+                    self._create_log('info', f"Removed link to {config.name}: {product.name} (BC ID: {bc_id}) - product was removed from this store",
+                                    product_id=bc_id, product_name=product.name,
+                                    error_details=f"Product not found in {config.name}; mapping removed.")
+                    mapping.unlink()
+            except Exception as e:
+                error_str = str(e).lower()
+                if '404' in error_str or 'not found' in error_str:
+                    _logger.info(f"Product {bc_id} not found in {config.name} (API error) - removing mapping (product was removed from this store)")
+                    self._create_log('info', f"Removed link to {config.name}: {product.name} (BC ID: {bc_id}) - product was removed from this store",
+                                    product_id=bc_id, product_name=product.name,
+                                    error_details=f"Product not found in {config.name} (API error); mapping removed.")
+                    mapping.unlink()
     
     def _sync_specific_product_from_bigcommerce(self, api):
         """Sync a specific product from BigCommerce to Odoo by SKU or BigCommerce ID"""
@@ -2096,7 +2140,7 @@ class BigCommerceProductSync(models.Model):
             # This will sync the product and all its variants
             self._create_or_update_product_from_bc(api, bc_product)
             
-            # Verify variants were synced
+            # Verify variants were synced and remove stale mappings (same behavior as Sync from BigCommerce button)
             try:
                 # Check if product was created/updated
                 odoo_product = self.env['product.template'].search([
@@ -2113,6 +2157,8 @@ class BigCommerceProductSync(models.Model):
                         odoo_product = mapping.product_tmpl_id
                 
                 if odoo_product:
+                    # Remove mappings to stores where product was deleted (same as Sync from BigCommerce button)
+                    self._remove_stale_mappings_for_product(odoo_product, self.config_id.id)
                     variant_count = len(odoo_product.product_variant_ids)
                     _logger.info(f"Product '{product_name}' synced with {variant_count} variant(s)")
                     self.current_item = f"Completed: {product_name} ({variant_count} variant(s) synced)"
@@ -2636,16 +2682,14 @@ class BigCommerceProductSync(models.Model):
         return all_ids
 
     def _archive_odoo_products_deleted_from_bigcommerce(self, bc_ids_seen):
-        """Archive Odoo products that have a mapping to this config but whose BigCommerce ID is not in bc_ids_seen.
+        """Remove mappings for products deleted from this store; archive product only if removed from ALL stores.
         
-        Used after a BC→Odoo sync (full or incremental): products that existed in both systems but were
-        deleted from BigCommerce are archived (active=False) in Odoo so they no longer appear in active product lists.
-        When BigCommerce returns 0 products (empty store or all deleted), bc_ids_seen is empty and we archive
-        all mapped products for this config.
+        Products linked to multiple BigCommerce stores are only archived when removed from BOTH stores.
+        When removed from one store, we remove that store's mapping but keep the product active if it
+        still has mappings to other stores.
         """
         mapping_obj = self.env['bigcommerce.product.mapping']
-        # Mappings for this config whose BC ID is not in the current BC product list (product deleted from BC)
-        # When bc_ids_seen is empty (0 products in BC), archive all mappings for this config
+        # Mappings for this config whose BC ID is not in the current BC product list (product deleted from this store)
         if bc_ids_seen:
             mappings = mapping_obj.search([
                 ('config_id', '=', self.config_id.id),
@@ -2655,33 +2699,39 @@ class BigCommerceProductSync(models.Model):
             mappings = mapping_obj.search([('config_id', '=', self.config_id.id)])
         if not mappings:
             return
-        to_archive = mappings.mapped('product_tmpl_id').filtered(lambda p: p.active)
+        # Collect products before unlinking mappings
+        products_affected = mappings.mapped('product_tmpl_id')
+        # Remove mappings for this config (product deleted from this store)
+        mapping_ids = mappings.ids
+        mappings.unlink()
+        # Only archive products that have NO remaining mappings to any store
+        to_archive = products_affected.filtered(
+            lambda p: p.active and not p.bigcommerce_mapping_ids
+        )
         if not to_archive:
+            _logger.info(f"Removed {len(mapping_ids)} mapping(s) for products deleted from {self.config_id.name}; "
+                        f"products kept active (still linked to other stores)")
             return
         count = len(to_archive)
         to_archive.write({'active': False})
         self.products_archived = count
         if self.sync_operation_id:
             self.sync_operation_id.write({'items_archived': count})
-        _logger.info(f"Archived {count} Odoo product(s) that were deleted from BigCommerce (config: {self.config_id.name})")
-        # Log each archived product so they appear in sync operation logs
-        for mapping in mappings:
-            if mapping.product_tmpl_id in to_archive:
-                self._create_log(
-                    'info',
-                    f"Archived (deleted from BigCommerce): {mapping.product_tmpl_id.name}",
-                    product_id=mapping.bigcommerce_id,
-                    product_name=mapping.product_tmpl_id.name,
-                    error_details="Product had a mapping to this config but no longer exists in BigCommerce. It has been archived (deactivated) in Odoo.",
-                )
-        # Summary log for the operation
+        _logger.info(f"Removed {len(mapping_ids)} mapping(s); archived {count} product(s) removed from all stores (config: {self.config_id.name})")
+        for product in to_archive:
+            self._create_log(
+                'info',
+                f"Archived (removed from all BigCommerce stores): {product.name}",
+                product_name=product.name,
+                error_details="Product had mappings only to this config and no longer exists in BigCommerce. It has been archived (deactivated) in Odoo.",
+            )
         names_preview = ", ".join(to_archive[:5].mapped('name'))
         if count > 5:
             names_preview += f" ... and {count - 5} more"
         self._create_log(
             'info',
-            f"Archived {count} product(s) that were deleted from BigCommerce: {names_preview}",
-            error_details="These products had a mapping to this config but no longer exist in BigCommerce. They have been archived (deactivated) in Odoo.",
+            f"Archived {count} product(s) removed from all stores: {names_preview}",
+            error_details="These products had mappings only to this config and no longer exist in BigCommerce. They have been archived (deactivated) in Odoo.",
         )
         self.env.cr.commit()
     
@@ -2853,7 +2903,7 @@ class BigCommerceProductSync(models.Model):
                         sync_ops = self.env['bigcommerce.sync.operation'].search([
                             ('sync_type', '=', 'product'),
                             ('config_id', '=', self.sync_operation_id.config_id.id),
-                            ('state', 'in', ['completed', 'completed_with_warnings']),
+                            ('state', 'in', ['completed', 'completed_with_warnings', 'completed_with_errors']),
                             ('end_date', '!=', False),
                         ], order='end_date desc', limit=10)  # Check last 10 successful syncs
                         
@@ -2875,7 +2925,7 @@ class BigCommerceProductSync(models.Model):
                         # that ended around this time
                         potential_sync = self.env['bigcommerce.sync.operation'].search([
                             ('sync_type', '=', 'product'),
-                            ('state', 'in', ['completed', 'completed_with_warnings']),
+                            ('state', 'in', ['completed', 'completed_with_warnings', 'completed_with_errors']),
                             ('end_date', '>=', existing.bigcommerce_last_sync),
                             ('end_date', '<=', existing.bigcommerce_last_sync),
                         ], limit=1)
@@ -3254,6 +3304,13 @@ class BigCommerceProductSync(models.Model):
                 # Ensure inventory tracking fields are NOT in product_vals for existing products
                 product_vals.pop('is_storable', None)
                 product_vals.pop('tracking', None)
+                # Reactivate if product was archived - it exists in BigCommerce again so it should be active
+                if not existing.active:
+                    product_vals['active'] = True
+                    _logger.info(f"Reactivating archived product {existing.name} (BC ID: {bc_id}) - product exists in BigCommerce")
+                    self._create_log('info', f"Unarchived product: {existing.name} (BC ID: {bc_id}) - product exists in BigCommerce again",
+                                    product_id=bc_id, product_name=existing.name,
+                                    error_details="Product was archived but exists in BigCommerce; reactivated.")
                 # Keep description and product_description in product_vals: clear Internal notes, update Product Description only
                 # Category rules apply only to new products; existing products keep their category (categ_id not in product_vals)
                 

@@ -15,16 +15,17 @@
         <field name="shippo_transaction_id" invisible="1"/>
         <field name="shippo_origin_address_id" invisible="1"/>
         <field name="shippo_rate_type" invisible="1"/>
+        <field name="is_delivery_out" invisible="1"/>
       </xpath>
-      <!-- Shippo buttons in form header: available on all pick and delivery orders -->
+      <!-- Shippo buttons in form header: only on delivery out (not on delivery pick) -->
       <xpath expr="//header" position="inside">
         <button name="action_get_shippo_rates" string="Get Shippo Rates" type="object"
                 class="btn-primary"
-                invisible="state in ('done','cancel')"
+                invisible="not is_delivery_out or state in ('done','cancel')"
                 title="Choose rate and generate label"/>
         <button name="action_cancel_shippo_shipment" string="Refund Shipment" type="object"
                 class="btn-secondary"
-                invisible="not shippo_transaction_id"
+                invisible="not is_delivery_out or not shippo_transaction_id"
                 title="Generate refund for this shipment"/>
       </xpath>
     </field>

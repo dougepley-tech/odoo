@@ -6,7 +6,8 @@ publicWidget.registry.RmaPortalForm = publicWidget.Widget.extend({
     selector: '.o_rma_portal_form',
     events: {
         'change select[name="operation_id"]': '_onChangeOperation',
-        'change input[name="quantity"]': '_onChangeQuantity',
+        'change input.o_rma_qty_input': '_onChangeQuantity',
+        'input input.o_rma_qty_input': '_onChangeQuantity',
     },
 
     _onChangeOperation(ev) {
@@ -19,14 +20,18 @@ publicWidget.registry.RmaPortalForm = publicWidget.Widget.extend({
 
     _onChangeQuantity(ev) {
         const input = ev.currentTarget;
-        const max = parseFloat(input.dataset.maxQty || '0');
-        const val = parseFloat(input.value || '0');
+        const max = Math.floor(parseFloat(input.dataset.maxQty || '0'));
+        let val = Math.floor(parseFloat(input.value || '0'));
+        if (Number.isNaN(val)) {
+            val = 0;
+        }
         if (val > max) {
-            input.value = max;
+            val = max;
         }
         if (val < 0) {
-            input.value = 0;
+            val = 0;
         }
+        input.value = String(val);
     },
 });
 

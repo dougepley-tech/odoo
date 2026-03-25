@@ -9,6 +9,7 @@
     "license": "AGPL-3",
     "depends": [
         "stock_account",
+        "sale",
         "sale_stock",
         "stock_delivery",
         "mail",

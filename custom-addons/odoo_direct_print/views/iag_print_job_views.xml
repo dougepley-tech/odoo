@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+  <record id="view_iag_print_job_tree" model="ir.ui.view">
+    <field name="name">iag.print.job.tree</field>
+    <field name="model">iag.print.job</field>
+    <field name="arch" type="xml">
+      <list string="Print Jobs" decoration-danger="state == 'failed'" decoration-success="state == 'done'">
+        <field name="create_date" string="Time"/>
+        <field name="name"/>
+        <field name="printer_id"/>
+        <field name="res_name" string="Document"/>
+        <field name="copies"/>
+        <field name="size_bytes" string="Bytes"/>
+        <field name="state" widget="badge"
+               decoration-success="state == 'done'"
+               decoration-danger="state == 'failed'"
+               decoration-warning="state == 'queued'"/>
+        <field name="error_message" optional="hide"/>
+      </list>
+    </field>
+  </record>
+
+  <record id="action_iag_print_job" model="ir.actions.act_window">
+    <field name="name">Print Log</field>
+    <field name="res_model">iag.print.job</field>
+    <field name="view_mode">list</field>
+    <field name="context">{'search_default_today': 1}</field>
+  </record>
+
+</odoo>

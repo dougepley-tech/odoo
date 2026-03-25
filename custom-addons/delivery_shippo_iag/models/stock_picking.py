@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
 import json
-from odoo import api, fields, models
+from odoo import _, api, fields, models
 
 
 class StockPicking(models.Model):
@@ -38,6 +38,18 @@ class StockPicking(models.Model):
         compute='_compute_is_shippo_carrier',
         help='True when the delivery carrier is Shippo; used for view visibility.',
     )
+    is_delivery_out = fields.Boolean(
+        string='Is Delivery Out',
+        compute='_compute_is_delivery_out',
+        help='True when this is an outgoing delivery (not a pick); used to show Get Shippo Rates only on delivery out.',
+    )
+
+    def _compute_is_delivery_out(self):
+        for picking in self:
+            picking.is_delivery_out = (
+                bool(picking.picking_type_id)
+                and picking.picking_type_id.code == 'outgoing'
+            )
 
     def _compute_is_shippo_carrier(self):
         for picking in self:
@@ -151,3 +163,37 @@ class StockPicking(models.Model):
             'target': 'new',
             'context': {'default_picking_id': self.id},
         }
+
+    def _shippo_requires_label_warning(self):
+        """True when validating an outgoing transfer with a selected service but no Shippo label."""
+        self.ensure_one()
+        if not self.picking_type_id or self.picking_type_id.code != 'outgoing':
+            return False
+        if not (self.shippo_selected_service or '').strip():
+            return False
+        if self.shippo_transaction_id:
+            return False
+        return True
+
+    def _action_open_shippo_label_warning_wizard(self):
+        self.ensure_one()
+        return {
+            'name': _('No shipping label'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'shippo.validate.warning.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_picking_id': self.id},
+        }
+
+    def _pre_action_done_hook(self):
+        res = super()._pre_action_done_hook()
+        if res is not True:
+            return res
+        if self.env.context.get('skip_shippo_label_warning'):
+            return True
+        if len(self) != 1:
+            return True
+        if self._shippo_requires_label_warning():
+            return self._action_open_shippo_label_warning_wizard()
+        return True

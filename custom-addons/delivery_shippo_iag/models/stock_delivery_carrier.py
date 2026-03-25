@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
+import logging
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
 
 
 class StockDeliveryCarrier(models.Model):
@@ -176,15 +180,18 @@ class StockDeliveryCarrier(models.Model):
 
     def shippo_send_shipping(self, pickings):
         """Return list of dicts with exact_price and tracking_number for each picking.
-        Expects a Shippo transaction already created (e.g. via Get Shippo Rates → Generate Label)."""
+        Uses the Shippo transaction when present; otherwise returns zero price (no label)."""
         from ..models.shippo_api import get_transaction, ShippoAPIError
         self.ensure_one()
         res = []
         for picking in pickings:
             if not picking.shippo_transaction_id:
-                raise UserError(_(
-                    'No Shippo label for this delivery order. Use Get Shippo Rates, select a rate, then Generate Label.'
-                ))
+                _logger.warning(
+                    'Shippo: validating %s without shippo_transaction_id (no label; price set to 0)',
+                    picking.name,
+                )
+                res.append({'exact_price': 0.0, 'tracking_number': ''})
+                continue
             try:
                 api_key, use_test = self._get_shippo_api_key_and_env()
                 txn = get_transaction(

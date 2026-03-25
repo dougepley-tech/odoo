@@ -5,13 +5,24 @@ import { FileViewer } from "@web/core/file_viewer/file_viewer";
 
 patch(FileViewer.prototype, {
     /**
-     * Open current file in new tab for printing (works for PDF, images, etc.)
+     * Open system print dialog for current file (PDF, images, etc.)
      */
     onClickPrintHeader() {
         const file = this.state.file;
-        if (file?.defaultSource || file?.downloadUrl) {
-            const url = file.defaultSource || file.downloadUrl;
-            window.open(url, "_blank");
+        const viewUrl = file?.defaultSource || file?.downloadUrl;
+        if (!viewUrl) return;
+        // Open in new window and trigger print when loaded (keeps dialog open)
+        const printWin = window.open(viewUrl, "_blank", "width=800,height=600");
+        if (printWin) {
+            printWin.onload = () => {
+                setTimeout(() => {
+                    try {
+                        printWin.print();
+                    } catch {
+                        // Print failed; user can still Ctrl+P in the window
+                    }
+                }, 500);
+            };
         }
     },
 });

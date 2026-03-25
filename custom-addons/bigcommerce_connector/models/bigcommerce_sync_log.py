@@ -34,8 +34,10 @@ class BigCommerceSyncLog(models.Model):
     ], string='Log Level', required=True, default='info', index=True)
     
     message = fields.Text(string='Message', required=True)
-    product_id = fields.Integer(string='Product ID', help='BigCommerce Product ID if applicable')
+    product_id = fields.Integer(string='Product ID', help='BigCommerce Product ID (or Order ID for order syncs)')
     product_name = fields.Char(string='Product Name')
+    sale_order_id = fields.Many2one('sale.order', string='Odoo Order', compute='_compute_sale_order_id', store=False,
+                                    help='For order syncs: the Odoo sale order linked to this BigCommerce order')
     error_details = fields.Text(string='Error Details', help='Full error traceback or additional details')
     request_url = fields.Char(string='Request URL')
     request_method = fields.Char(string='Request Method')
@@ -50,6 +52,17 @@ class BigCommerceSyncLog(models.Model):
         for record in self:
             msg_preview = record.message[:50] + '...' if len(record.message) > 50 else record.message
             record.display_name = f"[{record.log_level.upper()}] {record.sync_type} - {msg_preview}"
+    
+    def _compute_sale_order_id(self):
+        """For order syncs, find the Odoo sale order by BigCommerce order ID (stored in product_id)"""
+        for record in self:
+            if record.sync_type == 'order' and record.product_id:
+                order = self.env['sale.order'].search([
+                    ('bigcommerce_id', '=', record.product_id)
+                ], limit=1)
+                record.sale_order_id = order
+            else:
+                record.sale_order_id = False
     
     def action_clear_logs(self):
         """Clear old logs (older than 30 days)"""

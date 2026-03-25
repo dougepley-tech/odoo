@@ -268,8 +268,15 @@ class BigCommerceWebhook(http.Controller):
             
             if 'deleted' in scope:
                 if mapping and mapping.product_tmpl_id:
-                    _logger.info(f"Archiving product from webhook: {mapping.product_tmpl_id.name}")
-                    mapping.product_tmpl_id.sudo().write({'active': False})
+                    product = mapping.product_tmpl_id
+                    # Remove mapping for this store (product deleted from this store)
+                    mapping.unlink()
+                    # Only archive if product has no remaining mappings to other stores
+                    if not product.bigcommerce_mapping_ids and product.active:
+                        _logger.info(f"Archiving product from webhook (removed from all stores): {product.name}")
+                        product.sudo().write({'active': False})
+                    else:
+                        _logger.info(f"Removed mapping for {product.name} from {config.name}; product kept active (still linked to other stores)")
                 return True
             else:
                 # Sync product from BigCommerce

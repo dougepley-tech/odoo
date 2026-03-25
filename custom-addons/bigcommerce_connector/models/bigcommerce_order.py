@@ -91,7 +91,7 @@ class BigCommerceOrderSync(models.Model):
         last_op = self.env['bigcommerce.sync.operation'].search([
             ('sync_type', '=', 'order'),
             ('config_id', '=', config_id),
-            ('state', 'in', ['completed', 'completed_with_warnings']),
+            ('state', 'in', ['completed', 'completed_with_warnings', 'completed_with_errors']),
         ], order='start_date desc', limit=1)
         if last_op:
             last_ts = last_op.start_date
@@ -228,7 +228,12 @@ class BigCommerceOrderSync(models.Model):
             
             # Update sync operation record
             if self.sync_operation_id:
-                state = 'completed_with_warnings' if warnings_count > 0 else 'completed'
+                if self.orders_failed > 0:
+                    state = 'completed_with_errors'
+                elif warnings_count > 0:
+                    state = 'completed_with_warnings'
+                else:
+                    state = 'completed'
                 self.sync_operation_id.write({
                     'state': state,
                     'end_date': fields.Datetime.now(),
@@ -820,15 +825,15 @@ class BigCommerceOrderSync(models.Model):
                         if product_template:
                             _logger.debug(f"Order {bc_order_id}: Found product by BigCommerce ID {bc_product_id}")
                 
-                # 3. If still not found, log all available fields for debugging
+                # 3. If still not found, abort order sync (all products must be resolvable)
                 if not product_template:
                     available_fields = {k: v for k, v in bc_product.items() if k in ['id', 'product_id', 'order_product_id', 'sku', 'product_sku', 'sku_code', 'name', 'variant_id', 'product_variant_id']}
-                    error_msg = f"Product not found in Odoo: {product_name}"
+                    error_msg = f"Product not found in Odoo: {product_name}. Order sync aborted - all products must exist in Odoo."
                     _logger.error(f"Order {bc_order_id}: {error_msg}. Available product fields: {available_fields}")
                     self._create_log('error', error_msg, 
                                   order_id=bc_order_id, order_name=f"Order #{bc_order_id}",
                                   error_details=f"Product Name: {product_name}, Available fields: {available_fields}, Tried SKU: {sku}, Tried Product ID: {bc_product.get('product_id')}")
-                    continue
+                    raise ValueError(error_msg)
                 
                 # Try to find the specific variant from BigCommerce
                 product = False
@@ -873,13 +878,13 @@ class BigCommerceOrderSync(models.Model):
                                       error_details=f"Variant ID: {bc_variant_id}, SKU: {sku}, Using: {product.name}")
                 
                 if not product:
-                    # Template exists but has no variants - skip and log error
-                    error_msg = f"Product template found but has no variants: {product_template.name} (BigCommerce ID: {bc_product.get('product_id')})"
+                    # Template exists but has no variants - abort order sync (all products must be resolvable)
+                    error_msg = f"Product template found but has no variants: {product_template.name} (BigCommerce ID: {bc_product.get('product_id')}). Order sync aborted - fix product in Odoo and retry."
                     _logger.error(f"Order {bc_order_id}: {error_msg}")
                     self._create_log('error', error_msg, 
                                   order_id=bc_order_id, order_name=f"Order #{bc_order_id}",
                                   error_details=f"Product Template: {product_template.name}, BigCommerce Product ID: {bc_product.get('product_id')}")
-                    continue
+                    raise ValueError(error_msg)
                 
                 qty = float(bc_product.get('quantity', 1))
                 # Use base_price (or price_ex_tax as fallback) so tax is calculated separately
@@ -922,13 +927,15 @@ class BigCommerceOrderSync(models.Model):
                     'price_unit': price,
                     'discount': 0,  # Prevent Odoo from applying pricelist discounts - BigCommerce price is already final
                 }))
+            except ValueError:
+                # Product resolution errors - re-raise to abort order sync
+                raise
             except Exception as e:
                 _logger.error(f"Error processing product for order {bc_order_id}: {str(e)}")
-                self._create_log('error', f"Error processing order product: {str(e)}", 
+                self._create_log('error', f"Error processing order product: {str(e)}. Order sync aborted - all products must be resolvable.", 
                               order_id=bc_order_id, order_name=f"Order #{bc_order_id}",
                               error_details=str(e))
-                # Continue with other products rather than failing the entire order
-                continue
+                raise ValueError(f"Error processing order product: {str(e)}. Order sync aborted - all products must be resolvable.") from e
         
         if not order_lines:
             error_msg = f"Order {bc_order_id} has no valid order lines to create. All products in the order were not found in Odoo."
@@ -1183,27 +1190,23 @@ class BigCommerceOrderSync(models.Model):
                     return config.default_customer_id
                 raise ValueError(f"Cannot create or find customer for BC customer_id={customer_id}. Set a default customer in Order Import Settings or ensure the order has a billing address.")
 
-            # Before creating a new partner, check for an existing company (is_company=True) matching
-            # by company name or email. If found, link it to this BC customer so the delivery contact
-            # is attached to the company instead of creating a new top-level person.
+            # When company name is populated OR customer is in Wholesale Gold/Silver/Jobber:
+            # create a Company record and the person as a contact under it.
             bc_company = (bc_customer.get('company') or '').strip()
             if bc_company and '@' in bc_company:
                 bc_company = ''
             bc_email = (bc_customer.get('email') or '').strip()
-            if bc_company or bc_email:
-                existing_company = self._find_existing_company_for_bc_customer(
-                    bc_company, bc_email, customer_id
-                )
-                if existing_company:
-                    existing_company.write({'bigcommerce_id': customer_id})
-                    self._create_log(
-                        'info',
-                        f"Linked existing company {existing_company.name} to BC customer {customer_id}; delivery will be attached as contact.",
-                        order_id=bc_order.get('id') if bc_order else None,
-                        order_name=existing_company.name,
-                    )
-                    return existing_company
+            is_wholesale = self._customer_group_is_wholesale_company(bc_customer.get('customer_group_id'), api)
+            should_create_company = bool(bc_company) or is_wholesale
 
+            if should_create_company:
+                contact = self._get_or_create_company_and_contact(
+                    bc_customer, customer_id, bc_order, api
+                )
+                if contact:
+                    return contact
+
+            # No company/wholesale: create as individual person
             customer_vals = {
                 'name': f"{bc_customer.get('first_name', '')} {bc_customer.get('last_name', '')}".strip(),
                 'email': bc_customer.get('email', ''),
@@ -1212,12 +1215,9 @@ class BigCommerceOrderSync(models.Model):
             }
             if not customer_vals['name']:
                 customer_vals['name'] = customer_vals['email'] or f"BC Customer {customer_id}"
-            # Only set company name if it exists in BigCommerce and is not an email (BC sometimes sends email in company)
-            bc_company = bc_customer.get('company', '').strip()
-            if bc_company and '@' not in bc_company:
-                customer_vals['company_name'] = bc_company
-            if self._customer_group_is_wholesale_company(bc_customer.get('customer_group_id'), api):
-                customer_vals['is_company'] = True
+            bc_company_val = bc_customer.get('company', '').strip()
+            if bc_company_val and '@' not in bc_company_val:
+                customer_vals['company_name'] = bc_company_val
             new_partner = self.env['res.partner'].create(customer_vals)
             self._create_log('info', f"Created new customer {new_partner.name} (BC ID: {customer_id})",
                             order_id=customer_id, order_name=new_partner.name)
@@ -1274,6 +1274,78 @@ class BigCommerceOrderSync(models.Model):
             return existing
         return self.env['res.partner']
 
+    def _get_or_create_company_and_contact(self, bc_customer, customer_id, bc_order, api):
+        """Create or find a Company and create the person as a contact under it.
+        Returns the contact (person) for use as the order's customer.
+        Used when company name is populated OR customer is in Wholesale Gold/Silver/Jobber."""
+        bc_company = (bc_customer.get('company') or '').strip()
+        if bc_company and '@' in bc_company:
+            bc_company = ''
+        bc_email = (bc_customer.get('email') or '').strip()
+        person_name = f"{bc_customer.get('first_name', '')} {bc_customer.get('last_name', '')}".strip()
+        if not person_name:
+            person_name = bc_email or f"BC Customer {customer_id}"
+
+        # Determine company name: use BC company, or for wholesale-only derive from email domain
+        company_name = bc_company
+        if not company_name and bc_email and '@' in bc_email:
+            domain = bc_email.split('@')[-1].split('.')[0]
+            if domain:
+                company_name = domain.replace('_', ' ').replace('-', ' ').title()
+
+        if not company_name:
+            company_name = f"{person_name} Company"
+
+        # Check for existing company to attach to
+        existing_company = self._find_existing_company_for_bc_customer(bc_company or company_name, bc_email, customer_id)
+        if existing_company:
+            company = existing_company
+        else:
+            # Create new company
+            company_vals = {
+                'name': company_name,
+                'is_company': True,
+                'email': bc_email or False,
+                'phone': bc_customer.get('phone', '') or False,
+            }
+            company = self.env['res.partner'].create(company_vals)
+            self._create_log(
+                'info',
+                f"Created company {company.name} for BC customer {customer_id}",
+                order_id=bc_order.get('id') if bc_order else None,
+                order_name=company.name,
+            )
+
+        # Check for existing contact under this company with same bigcommerce_id
+        existing_contact = self.env['res.partner'].search([
+            ('parent_id', '=', company.id),
+            ('bigcommerce_id', '=', customer_id),
+        ], limit=1)
+        if existing_contact:
+            existing_contact.write({
+                'name': person_name,
+                'email': bc_customer.get('email', ''),
+                'phone': bc_customer.get('phone', ''),
+            })
+            return existing_contact
+
+        # Create contact (person) as child of company
+        contact_vals = {
+            'name': person_name,
+            'parent_id': company.id,
+            'email': bc_customer.get('email', ''),
+            'phone': bc_customer.get('phone', ''),
+            'bigcommerce_id': customer_id,
+        }
+        contact = self.env['res.partner'].create(contact_vals)
+        self._create_log(
+            'info',
+            f"Created contact {contact.name} for company {company.name} (BC ID: {customer_id})",
+            order_id=bc_order.get('id') if bc_order else None,
+            order_name=contact.name,
+        )
+        return contact
+
     def _get_wholesale_company_group_ids(self, api):
         """Return set of BigCommerce customer group IDs whose name is Wholesale Jobber, Silver, or Gold.
         Cached on config for the current request to avoid repeated API calls."""
@@ -1313,21 +1385,26 @@ class BigCommerceOrderSync(models.Model):
         if bc_company and '@' in bc_company:
             bc_company = ''
         email = (billing.get('email') or bc_order.get('billing_address', {}).get('email') or '').strip()
-        if customer_id and (bc_company or email):
-            existing_company = self._find_existing_company_for_bc_customer(bc_company, email, customer_id)
-            if existing_company:
-                existing_company.write({'bigcommerce_id': customer_id})
-                self._create_log(
-                    'info',
-                    f"Linked existing company {existing_company.name} to BC customer {customer_id} (from billing); delivery will be attached as contact.",
-                    order_id=bc_order.get('id'), order_name=existing_company.name,
-                )
-                return existing_company
+        is_wholesale = api and self._customer_group_is_wholesale_company(bc_order.get('customer_group_id'), api)
+        should_create_company = bool(bc_company) or is_wholesale
+
+        if should_create_company and customer_id:
+            bc_customer_from_billing = {
+                'company': bc_company,
+                'first_name': addr.get('first_name', ''),
+                'last_name': addr.get('last_name', ''),
+                'email': email,
+                'phone': addr.get('phone') or billing.get('phone', ''),
+            }
+            contact = self._get_or_create_company_and_contact(
+                bc_customer_from_billing, customer_id, bc_order, api
+            )
+            if contact:
+                return contact
+
         name = f"{addr.get('first_name', '')} {addr.get('last_name', '')}".strip()
         if not name:
             name = f"BC Customer {customer_id}"
-        # Email may be on order or billing depending on BC version
-        email = (billing.get('email') or bc_order.get('billing_address', {}).get('email') or '').strip()
         country_id = False
         if addr.get('country_iso2'):
             country = self.env['res.country'].search([('code', '=', addr['country_iso2'])], limit=1)
@@ -1350,13 +1427,10 @@ class BigCommerceOrderSync(models.Model):
             'zip': addr.get('zip') or '',
             'country_id': country_id,
         }
-        # Only set bigcommerce_id for non-guest so we can find this partner on future orders
         if customer_id:
             vals['bigcommerce_id'] = customer_id
         if bc_company and '@' not in bc_company:
             vals['company_name'] = bc_company
-        if api and self._customer_group_is_wholesale_company(bc_order.get('customer_group_id'), api):
-            vals['is_company'] = True
         try:
             partner = self.env['res.partner'].create(vals)
             self._create_log('info', f"Created customer from order billing: {partner.name} (BC ID: {customer_id})",
