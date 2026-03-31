@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Not noupdate: applies on module upgrade so existing DBs get Issued → Sales Order. -->
+<odoo>
+    <record id="fishbowl_status_so_20" model="fishbowl.status.map">
+        <field name="odoo_so_state">sale</field>
+    </record>
+</odoo>

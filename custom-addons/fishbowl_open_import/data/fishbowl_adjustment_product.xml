@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="product_template_fishbowl_so_adjustment" model="product.template">
+        <field name="name">Fishbowl SO adjustment</field>
+        <field name="categ_id" ref="product.product_category_services"/>
+        <field name="type">service</field>
+        <field name="sale_ok" eval="True"/>
+        <field name="purchase_ok" eval="False"/>
+        <field name="list_price" eval="0.0"/>
+        <field name="invoice_policy">order</field>
+    </record>
+</odoo>

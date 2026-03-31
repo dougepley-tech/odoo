@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Avoid duplicate res.partner.category name: reuse existing "Fishbowl Import" if present. -->
+    <function model="res.partner.category" name="_fishbowl_import_ensure_category_xmlid"/>
+</odoo>

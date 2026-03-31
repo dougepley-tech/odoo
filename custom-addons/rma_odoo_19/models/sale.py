@@ -1,5 +1,6 @@
 from odoo import Command, _, api, fields, models
 from odoo.exceptions import ValidationError
+from odoo.fields import Domain
 from odoo.tools import float_is_zero
 
 
@@ -12,6 +13,7 @@ class SaleOrder(models.Model):
         string="RMAs",
         copy=False,
         compute="_compute_rma_relation_ids",
+        search="_search_rma_ids",
         precompute=False,
     )
     replacement_rma_ids = fields.One2many(
@@ -26,6 +28,18 @@ class SaleOrder(models.Model):
         string="RMA count",
         compute="_compute_rma_count",
     )
+
+    @api.model
+    def _search_rma_ids(self, operator, value):
+        """Allow ORM dependency resolution for invoice_ids / invoice_count (Odoo 19 searchable depends)."""
+        if operator in Domain.NEGATIVE_OPERATORS:
+            return NotImplemented
+        if operator == "any":
+            operator = "in"
+            if isinstance(value, Domain):
+                value = self.env["rma"]._search(value)
+        query = self.env["rma"]._search([("id", operator, value)])
+        return [("id", "in", query.subselect("order_id"))]
 
     def _compute_rma_relation_ids(self):
         """Compute RMA relations only for RMA users; others get empty to avoid access errors on SO/delivery/partner."""

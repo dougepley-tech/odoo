@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Avoid duplicate product.tag name: reuse existing "Fishbowl Import" tag if present. -->
+    <function model="product.tag" name="_fishbowl_import_ensure_tag_xmlid"/>
+</odoo>

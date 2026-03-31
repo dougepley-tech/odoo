@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_fishbowl_sync_config_form" model="ir.ui.view">
+        <field name="name">fishbowl.sync.config.form</field>
+        <field name="model">fishbowl.sync.config</field>
+        <field name="arch" type="xml">
+            <form string="Fishbowl MySQL">
+                <header>
+                    <button name="action_test_connection" type="object" string="Test connection" class="btn-primary"/>
+                </header>
+                <sheet>
+                    <group>
+                        <field name="active"/>
+                        <field name="company_id" groups="base.group_multi_company"/>
+                        <field name="host"/>
+                        <field name="port"/>
+                        <field name="database"/>
+                        <field name="user"/>
+                        <field name="password" password="True"/>
+                    </group>
+                    <group string="Sales order import">
+                        <field name="import_so_status_names" placeholder="One Fishbowl sostatus.name per line"/>
+                        <field name="fishbowl_memo_so_table_id" placeholder="e.g. 1012013120"/>
+                    </group>
+                    <group string="Purchase order import">
+                        <field name="import_po_status_names" placeholder="One Fishbowl postatus.name per line"/>
+                        <field name="closed_po_status_names" placeholder="One status name per line (if import list is empty)"/>
+                        <field name="fishbowl_memo_po_table_id" placeholder="e.g. from SELECT DISTINCT memo.tableId JOIN po"/>
+                    </group>
+                    <group string="Reference (not used for SO import)">
+                        <field name="closed_so_status_names" placeholder="One status name per line"/>
+                    </group>
+                    <group string="Inventory">
+                        <field name="inventory_location_id"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="view_fishbowl_sync_config_tree" model="ir.ui.view">
+        <field name="name">fishbowl.sync.config.tree</field>
+        <field name="model">fishbowl.sync.config</field>
+        <field name="arch" type="xml">
+            <list string="Fishbowl MySQL">
+                <field name="host"/>
+                <field name="database"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+    <record id="action_fishbowl_sync_config" model="ir.actions.act_window">
+        <field name="name">Fishbowl MySQL</field>
+        <field name="res_model">fishbowl.sync.config</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_fishbowl_import_inventory_wizard" model="ir.ui.view">
+        <field name="name">fishbowl.import.inventory.wizard.form</field>
+        <field name="model">fishbowl.import.inventory.wizard</field>
+        <field name="priority" eval="20"/>
+        <field name="arch" type="xml">
+            <form string="Sync Fishbowl inventory">
+                <group string="Connection">
+                    <field name="config_id"/>
+                </group>
+                <group string="Product filter (optional)">
+                    <field
+                        name="part_number"
+                        string="Part number"
+                        placeholder="Leave empty to sync all products"
+                    />
+                </group>
+                <group>
+                    <field name="reconcile_zero_extra"/>
+                    <field name="dry_run"/>
+                </group>
+                <footer>
+                    <button name="action_import" type="object" string="Run" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+                <group invisible="not result_message">
+                    <field name="result_message" nolabel="1"/>
+                </group>
+            </form>
+        </field>
+    </record>
+    <record id="action_fishbowl_import_inventory_wizard" model="ir.actions.act_window">
+        <field name="name">Fishbowl inventory sync</field>
+        <field name="res_model">fishbowl.import.inventory.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_fishbowl_import_so_wizard" model="ir.ui.view">
+        <field name="name">fishbowl.import.so.wizard.form</field>
+        <field name="model">fishbowl.import.so.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Import Fishbowl open sales orders">
+                <field name="step" invisible="1"/>
+                <group string="Options" invisible="step != 'options'">
+                    <field name="config_id"/>
+                    <field name="wizard_so_status_names" placeholder="One Fishbowl sostatus.name per line" colspan="2"/>
+                    <field name="fishbowl_so_num"/>
+                    <field name="create_missing_products"/>
+                    <field name="sync_fishbowl_fulfillment"/>
+                    <field name="fishbowl_ship_import_without_stock"/>
+                    <field name="post_fishbowl_note_to_chatter"/>
+                    <field name="post_fishbowl_memos_to_chatter"/>
+                </group>
+                <group string="Review" invisible="step != 'confirm'">
+                    <field name="preview_import_count"/>
+                    <field name="preview_skip_count"/>
+                    <field name="preview_summary" nolabel="1" colspan="2"/>
+                </group>
+                <group string="Result" invisible="step != 'done' or not result_message">
+                    <field name="result_message" nolabel="1"/>
+                </group>
+                <footer>
+                    <button name="action_preview" type="object" string="Preview" class="btn-primary" invisible="step != 'options'"/>
+                    <button name="action_import" type="object" string="Import" class="btn-primary" invisible="step != 'confirm'"/>
+                    <button name="action_back_to_options" type="object" string="Back" class="btn-secondary" invisible="step == 'options'"/>
+                    <button string="Close" class="btn-secondary" special="cancel" invisible="step == 'confirm'"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+    <record id="action_fishbowl_import_so_wizard" model="ir.actions.act_window">
+        <field name="name">Fishbowl open sales orders</field>
+        <field name="res_model">fishbowl.import.so.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

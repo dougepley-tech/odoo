@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_fishbowl_location_map_tree" model="ir.ui.view">
+        <field name="name">fishbowl.location.map.tree</field>
+        <field name="model">fishbowl.location.map</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="fishbowl_group_name"/>
+                <field name="fishbowl_type_name"/>
+                <field name="fishbowl_location_name"/>
+                <field name="location_id"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+    <record id="action_fishbowl_location_map" model="ir.actions.act_window">
+        <field name="name">Fishbowl location mapping</field>
+        <field name="res_model">fishbowl.location.map</field>
+        <field name="view_mode">list</field>
+    </record>
+</odoo>

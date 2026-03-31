@@ -12,10 +12,10 @@ class IagPrintUserRule(models.Model):
     printer_id = fields.Many2one('iag.printer', string='Printer', required=True)
     copies = fields.Integer(string='Copies', default=1)
 
-    _sql_constraints = [
-        ('user_report_uniq', 'UNIQUE(user_id, report_id)',
-         'A user can only have one default printer per report.'),
-    ]
+    _user_report_uniq = models.Constraint(
+        'UNIQUE(user_id, report_id)',
+        'A user can only have one default printer per report.',
+    )
 
     @api.model
     def get_printer_for_user(self, user_id: int, report_xml_id: str):

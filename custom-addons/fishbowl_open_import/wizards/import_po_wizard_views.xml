@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_fishbowl_import_po_wizard" model="ir.ui.view">
+        <field name="name">fishbowl.import.po.wizard.form</field>
+        <field name="model">fishbowl.import.po.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Import Fishbowl open purchase orders">
+                <field name="step" invisible="1"/>
+                <group string="Options" invisible="step != 'options'">
+                    <field name="config_id"/>
+                    <field name="wizard_po_status_names" placeholder="Defaults from config: Bid Request, Issued, Partial" colspan="2"/>
+                    <field name="fishbowl_po_num"/>
+                    <field name="create_missing_products"/>
+                    <field name="post_fishbowl_memos_to_chatter"/>
+                </group>
+                <group string="Review" invisible="step != 'confirm'">
+                    <field name="preview_import_count"/>
+                    <field name="preview_skip_count"/>
+                    <field name="preview_summary" nolabel="1" colspan="2"/>
+                </group>
+                <group string="Result" invisible="step != 'done' or not result_message">
+                    <field name="result_message" nolabel="1"/>
+                </group>
+                <footer>
+                    <button name="action_preview" type="object" string="Preview" class="btn-primary" invisible="step != 'options'"/>
+                    <button name="action_import" type="object" string="Import" class="btn-primary" invisible="step != 'confirm'"/>
+                    <button name="action_back_to_options" type="object" string="Back" class="btn-secondary" invisible="step == 'options'"/>
+                    <button string="Close" class="btn-secondary" special="cancel" invisible="step == 'confirm'"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+    <record id="action_fishbowl_import_po_wizard" model="ir.actions.act_window">
+        <field name="name">Fishbowl open purchase orders</field>
+        <field name="res_model">fishbowl.import.po.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

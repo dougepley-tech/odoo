@@ -37,12 +37,12 @@ class IagDirectPrintController(http.Controller):
 
     # ── Printers ──────────────────────────────────────────────────────────────
 
-    @http.route('/iag/print/printers', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/printers', type='jsonrpc', auth='user', methods=['POST'])
     def list_printers(self):
         printers = request.env['iag.printer'].search([('active', '=', True)])
         return [self._printer_dict(p) for p in printers]
 
-    @http.route('/iag/print/printers/check_status', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/printers/check_status', type='jsonrpc', auth='user', methods=['POST'])
     def check_status(self, printer_ids=None):
         domain = [('active', '=', True)]
         if printer_ids:
@@ -52,7 +52,7 @@ class IagDirectPrintController(http.Controller):
             p._check_status()
         return [self._printer_dict(p) for p in printers]
 
-    @http.route('/iag/print/printers/test', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/printers/test', type='jsonrpc', auth='user', methods=['POST'])
     def test_printer(self, printer_id):
         printer = request.env['iag.printer'].browse(int(printer_id))
         if not printer.exists():
@@ -63,12 +63,12 @@ class IagDirectPrintController(http.Controller):
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
-    @http.route('/iag/print/printers/create', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/printers/create', type='jsonrpc', auth='user', methods=['POST'])
     def create_printer(self, vals):
         printer = request.env['iag.printer'].create(vals)
         return self._printer_dict(printer)
 
-    @http.route('/iag/print/printers/write', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/printers/write', type='jsonrpc', auth='user', methods=['POST'])
     def write_printer(self, printer_id, vals):
         printer = request.env['iag.printer'].browse(int(printer_id))
         if not printer.exists():
@@ -76,7 +76,7 @@ class IagDirectPrintController(http.Controller):
         printer.write(vals)
         return self._printer_dict(printer)
 
-    @http.route('/iag/print/printers/delete', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/printers/delete', type='jsonrpc', auth='user', methods=['POST'])
     def delete_printer(self, printer_id):
         printer = request.env['iag.printer'].browse(int(printer_id))
         if printer.exists():
@@ -85,7 +85,7 @@ class IagDirectPrintController(http.Controller):
 
     # ── Reports ───────────────────────────────────────────────────────────────
 
-    @http.route('/iag/print/reports', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/reports', type='jsonrpc', auth='user', methods=['POST'])
     def list_reports(self):
         reports = request.env['ir.actions.report'].search([
             ('report_type', 'in', ['qweb-pdf', 'qweb-text']),
@@ -120,7 +120,7 @@ class IagDirectPrintController(http.Controller):
 
     # ── Print job ─────────────────────────────────────────────────────────────
 
-    @http.route('/iag/print/send', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/send', type='jsonrpc', auth='user', methods=['POST'])
     def send_print_job(self, report_xml_id, res_model, res_id, printer_id, copies=1):
         try:
             record = request.env[res_model].browse(int(res_id))
@@ -168,25 +168,25 @@ class IagDirectPrintController(http.Controller):
 
     # ── Scenarios ─────────────────────────────────────────────────────────────
 
-    @http.route('/iag/print/scenarios', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/scenarios', type='jsonrpc', auth='user', methods=['POST'])
     def list_scenarios(self):
         # Include inactive scenarios so users can see and reactivate them
         scenarios = request.env['iag.print.scenario'].with_context(active_test=False).search([])
         return [self._scenario_dict(s) for s in scenarios]
 
-    @http.route('/iag/print/scenarios/create', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/scenarios/create', type='jsonrpc', auth='user', methods=['POST'])
     def create_scenario(self, vals):
         s = request.env['iag.print.scenario'].create(vals)
         return self._scenario_dict(s)
 
-    @http.route('/iag/print/scenarios/toggle', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/scenarios/toggle', type='jsonrpc', auth='user', methods=['POST'])
     def toggle_scenario(self, scenario_id, active):
         s = request.env['iag.print.scenario'].browse(int(scenario_id))
         if s.exists():
             s.active = bool(active)
         return self._scenario_dict(s)
 
-    @http.route('/iag/print/scenarios/update', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/scenarios/update', type='jsonrpc', auth='user', methods=['POST'])
     def update_scenario(self, scenario_id, vals):
         s = request.env['iag.print.scenario'].browse(int(scenario_id))
         if not s.exists():
@@ -194,7 +194,7 @@ class IagDirectPrintController(http.Controller):
         s.write(vals)
         return self._scenario_dict(s)
 
-    @http.route('/iag/print/scenarios/delete', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/scenarios/delete', type='jsonrpc', auth='user', methods=['POST'])
     def delete_scenario(self, scenario_id):
         s = request.env['iag.print.scenario'].browse(int(scenario_id))
         if s.exists():
@@ -203,7 +203,7 @@ class IagDirectPrintController(http.Controller):
 
     # ── User rules ────────────────────────────────────────────────────────────
 
-    @http.route('/iag/print/user_rules', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/user_rules', type='jsonrpc', auth='user', methods=['POST'])
     def list_user_rules(self):
         rules = request.env['iag.print.user.rule'].search([])
         return [{
@@ -217,7 +217,7 @@ class IagDirectPrintController(http.Controller):
             'copies': r.copies,
         } for r in rules]
 
-    @http.route('/iag/print/user_rules/save', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/user_rules/save', type='jsonrpc', auth='user', methods=['POST'])
     def save_user_rule(self, vals):
         existing = request.env['iag.print.user.rule'].search([
             ('user_id', '=', vals.get('user_id')),
@@ -230,7 +230,7 @@ class IagDirectPrintController(http.Controller):
             r = request.env['iag.print.user.rule'].create(vals)
         return {'id': r.id, 'success': True}
 
-    @http.route('/iag/print/user_rules/update', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/user_rules/update', type='jsonrpc', auth='user', methods=['POST'])
     def update_user_rule(self, rule_id, vals):
         r = request.env['iag.print.user.rule'].browse(int(rule_id))
         if not r.exists():
@@ -238,7 +238,7 @@ class IagDirectPrintController(http.Controller):
         r.write(vals)
         return {'id': r.id, 'success': True}
 
-    @http.route('/iag/print/user_rules/delete', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/user_rules/delete', type='jsonrpc', auth='user', methods=['POST'])
     def delete_user_rule(self, rule_id):
         r = request.env['iag.print.user.rule'].browse(int(rule_id))
         if r.exists():
@@ -247,7 +247,7 @@ class IagDirectPrintController(http.Controller):
 
     # ── Print jobs log ────────────────────────────────────────────────────────
 
-    @http.route('/iag/print/jobs', type='json', auth='user', methods=['POST'])
+    @http.route('/iag/print/jobs', type='jsonrpc', auth='user', methods=['POST'])
     def list_jobs(self, limit=100):
         jobs = request.env['iag.print.job'].search(
             [], limit=int(limit), order='create_date desc')
