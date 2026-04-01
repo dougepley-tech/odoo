@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
+from odoo.tools.float_utils import float_compare
 
 _logger = logging.getLogger(__name__)
 
@@ -87,6 +88,29 @@ class FishbowlSyncConfig(models.Model):
         help='Optional. In the ``memo`` table, PO memos often use a fixed ``tableId`` per database. '
         'Discover with: '
         '``SELECT DISTINCT m.tableId FROM memo m INNER JOIN po ON po.id = m.recordId WHERE po.num = \'…\';``',
+    )
+    create_credit_return_receipts = fields.Boolean(
+        string='Create Odoo incoming receipt for credit returns',
+        default=True,
+        help='When a Fishbowl SO has Credit Return lines that are not fully received on ``receiptitem``, '
+        'create a draft incoming transfer (customer → stock) during SO import. Stored on this config so '
+        'the option is not lost when the import wizard moves to the confirm step (OWL drops hidden booleans).',
+    )
+    credit_return_receipt_when_fishbowl_fully_received = fields.Boolean(
+        string='Receipt when Fishbowl shows return fully received',
+        default=False,
+        help='If Fishbowl ``receiptitem`` already sums to the full ordered qty on each credit return line, '
+        'remaining receive qty is zero and no receipt is created by default. Enable this to still create '
+        'an Odoo incoming transfer using the **ordered** return qty (for RMA / Odoo-only paperwork). '
+        '**SO import** already does this automatically when Credit Return lines are skipped from the order. '
+        'Only use when you accept possible double-count risk if goods were already received in Fishbowl.',
+    )
+    zero_balance_when_fishbowl_paid = fields.Boolean(
+        string='Zero balance when paid in Fishbowl',
+        default=True,
+        help='When Fishbowl shows the order as fully paid, add one adjustment line so the Odoo order total '
+        'is zero. Stored on this config so the option is not lost when the import wizard moves to the '
+        'confirm step (OWL drops hidden booleans on the options step).',
     )
 
     _company_uniq = models.Constraint(
@@ -418,6 +442,132 @@ class FishbowlSyncConfig(models.Model):
         finally:
             conn.close()
         return rows
+
+    def enrich_so_headers_payment_flags(self, headers):
+        """Set ``fishbowl_paid_in_full`` on each header dict when Fishbowl shows the SO as paid.
+
+        Uses ``so.paymentTotal`` vs ``so.total``. If that does not indicate paid, falls back to
+        ``so.balanceDue`` (when selected) so cart-integrated orders may still match after payment.
+        If the query fails (schema difference), headers are left unchanged (no flag / not paid).
+        """
+        self.ensure_one()
+        if not headers:
+            return
+        ids = []
+        for h in headers:
+            hid = h.get('id')
+            if hid is not None:
+                ids.append(int(hid))
+        if not ids:
+            return
+        ph = ','.join(['%s'] * len(ids))
+        conn = self._get_connection()
+        rows_by_id = {}
+        try:
+            with conn.cursor() as cur:
+                sql_variants = (
+                    f"SELECT id, paymentTotal, total, balanceDue, amountPaid FROM so WHERE id IN ({ph})",
+                    f"SELECT id, paymentTotal, total, balanceDue FROM so WHERE id IN ({ph})",
+                    f"SELECT id, paymentTotal, total FROM so WHERE id IN ({ph})",
+                )
+                for sql in sql_variants:
+                    try:
+                        cur.execute(sql, tuple(ids))
+                        for row in cur.fetchall():
+                            rid = row.get('id')
+                            if rid is not None:
+                                rows_by_id[int(rid)] = row
+                        if rows_by_id:
+                            break
+                    except Exception:
+                        rows_by_id = {}
+                        continue
+        finally:
+            conn.close()
+        if not rows_by_id:
+            return
+
+        def _col(row, *names):
+            for n in names:
+                for k, v in row.items():
+                    if k and str(k).lower() == n.lower():
+                        return v
+            return None
+
+        for h in headers:
+            hid = h.get('id')
+            if hid is None:
+                continue
+            row = rows_by_id.get(int(hid))
+            if not row:
+                h['fishbowl_paid_in_full'] = False
+                continue
+            pt = _col(row, 'paymentTotal', 'paymenttotal')
+            tot = _col(row, 'total')
+            try:
+                ptf = float(pt or 0)
+                totf = float(tot or 0)
+            except (TypeError, ValueError):
+                h['fishbowl_paid_in_full'] = False
+                continue
+            if totf <= 0:
+                h['fishbowl_paid_in_full'] = False
+                continue
+            # Paid when payments cover order total (small tolerance for rounding).
+            paid = ptf + 0.01 >= totf
+            if not paid:
+                # amountPaid / paidTotal (Fishbowl column names vary; cart sync may fill these first).
+                for ap_name in ('amountPaid', 'amountpaid', 'paidTotal', 'paidtotal', 'paid'):
+                    apv = _col(row, ap_name)
+                    if apv is None:
+                        continue
+                    try:
+                        apf = float(apv)
+                    except (TypeError, ValueError):
+                        continue
+                    if apf + 0.01 >= totf:
+                        paid = True
+                        break
+            if not paid:
+                # Fallback: balanceDue — cart-integrated orders may lag paymentTotal.
+                bd = _col(row, 'balanceDue', 'balancedue')
+                try:
+                    bdf = float(bd) if bd is not None else None
+                except (TypeError, ValueError):
+                    bdf = None
+                if bdf is not None and float_compare(bdf, 0.0, precision_rounding=0.01) <= 0:
+                    paid = True
+            h['fishbowl_paid_in_full'] = paid
+
+    def enrich_so_headers_payment_memo_hints(self, headers):
+        """Set ``fishbowl_paid_in_full`` when Fishbowl SO memos indicate payment is verified.
+
+        Complements :meth:`enrich_so_headers_payment_flags` when MySQL totals do not yet show paid
+        (e.g. BigCommerce + AvaTax) but staff memos record **Payment Verified**."""
+        self.ensure_one()
+        if not headers:
+            return
+        for h in headers:
+            if h.get('fishbowl_paid_in_full'):
+                continue
+            so_id = h.get('id')
+            if so_id is None:
+                continue
+            try:
+                memos = self.fetch_so_memos(int(so_id))
+            except Exception as e:
+                _logger.debug('Fishbowl memo hint for SO id %s: %s', so_id, e)
+                continue
+            parts = []
+            for m in memos or []:
+                t = m.get('memo_text')
+                if t is None:
+                    t = m.get('memo')
+                if t:
+                    parts.append(str(t))
+            blob = ' '.join(parts).lower()
+            if 'payment verified' in blob:
+                h['fishbowl_paid_in_full'] = True
 
     def fetch_so_lines(self, so_id):
         """Return soitem rows for a Fishbowl SO. Includes ``line_type_name`` when soitemtype joins."""

@@ -21,6 +21,9 @@
                     <group string="Sales order import">
                         <field name="import_so_status_names" placeholder="One Fishbowl sostatus.name per line"/>
                         <field name="fishbowl_memo_so_table_id" placeholder="e.g. 1012013120"/>
+                        <field name="create_credit_return_receipts"/>
+                        <field name="credit_return_receipt_when_fishbowl_fully_received"/>
+                        <field name="zero_balance_when_fishbowl_paid"/>
                     </group>
                     <group string="Purchase order import">
                         <field name="import_po_status_names" placeholder="One Fishbowl postatus.name per line"/>

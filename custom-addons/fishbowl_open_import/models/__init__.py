@@ -2,6 +2,7 @@
 
 from . import fishbowl_sync_config
 from . import fishbowl_so_fulfillment
+from . import fishbowl_so_credit_return
 from . import fishbowl_po_receipt
 from . import fishbowl_sync_config_partner
 from . import fishbowl_location_map

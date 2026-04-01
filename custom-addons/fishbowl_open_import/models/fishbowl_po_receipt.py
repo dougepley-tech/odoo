@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 #
 # Fishbowl ``poitem`` exposes ``qtyFulfilled``, ``qtyToFulfill``, ``poitemstatus``, and ``receiptitem``.
+# ``receiptitem.poItemId`` → ``poitem.id`` (canonical); ``orderItemId`` is tried as a fallback on older DBs.
 # PO import creates **full** Odoo PO lines; Fishbowl-already-received qty is stored on the line as
 # ``fishbowl_prior_received_qty`` (counts toward Received without inventory). Incoming pickings are
 # adjusted so move demand is only the **remaining** Fishbowl qty (no receipt for prior receipts).
@@ -71,7 +72,7 @@ class FishbowlSyncConfig(models.Model):
         """Return poitem rows including fulfilled qty when the Fishbowl schema supports it.
 
         Prefer queries that join ``poitemstatus`` (Fulfilled vs Entered) and sum ``receiptitem.qty``
-        for ``orderItemId`` = ``poitem.id`` — those match the Fishbowl UI when ``qtyToFulfill`` /
+        for ``poItemId`` / ``orderItemId`` = ``poitem.id`` — those match the Fishbowl UI when ``qtyToFulfill`` /
         ``qtyFulfilled`` are stale in ``poitem``.
 
         When the schema supports it, joins ``poitemtype`` so each row includes ``poitem_type_name``
@@ -84,6 +85,48 @@ class FishbowlSyncConfig(models.Model):
             rows = self._fb_try_queries(
                 conn,
                 [
+                    (
+                        """
+                        SELECT pi.id AS poitem_id, pi.poId, pi.partId, pi.partNum,
+                               pi.description, pi.qtyToFulfill, pi.unitCost, pi.totalCost,
+                               pi.poLineItem, p.num AS part_num,
+                               COALESCE(pi.qtyFulfilled, 0) AS qtyFulfilled,
+                               COALESCE(pi.qty, pi.qtyToFulfill + COALESCE(pi.qtyFulfilled, 0)) AS qtyOrdered,
+                               pis.name AS poitem_status_name,
+                               pit.name AS poitem_type_name,
+                               (SELECT COALESCE(SUM(ri.qty), 0)
+                                FROM receiptitem ri
+                                WHERE ri.poItemId = pi.id) AS receipt_qty_sum
+                        FROM poitem pi
+                        LEFT JOIN part p ON p.id = pi.partId
+                        LEFT JOIN poitemstatus pis ON pis.id = pi.statusId
+                        LEFT JOIN poitemtype pit ON pit.id = pi.typeId
+                        WHERE pi.poId = %s
+                        ORDER BY COALESCE(pi.poLineItem, 0), pi.id
+                        """,
+                        (po_id,),
+                    ),
+                    (
+                        """
+                        SELECT pi.id AS poitem_id, pi.poId, pi.partId, pi.partNum,
+                               pi.description, pi.qtyToFulfill, pi.unitCost, pi.totalCost,
+                               pi.poLineItem, p.num AS part_num,
+                               COALESCE(pi.qtyFulfilled, 0) AS qtyFulfilled,
+                               COALESCE(pi.qty, pi.qtyToFulfill + COALESCE(pi.qtyFulfilled, 0)) AS qtyOrdered,
+                               pis.name AS poitem_status_name,
+                               pit.name AS poitem_type_name,
+                               (SELECT COALESCE(SUM(ri.qty), 0)
+                                FROM receiptitem ri
+                                WHERE ri.poitemid = pi.id) AS receipt_qty_sum
+                        FROM poitem pi
+                        LEFT JOIN part p ON p.id = pi.partId
+                        LEFT JOIN poitemstatus pis ON pis.id = pi.statusId
+                        LEFT JOIN poitemtype pit ON pit.id = pi.typeId
+                        WHERE pi.poId = %s
+                        ORDER BY COALESCE(pi.poLineItem, 0), pi.id
+                        """,
+                        (po_id,),
+                    ),
                     (
                         """
                         SELECT pi.id AS poitem_id, pi.poId, pi.partId, pi.partNum,

@@ -232,6 +232,33 @@ class FishbowlSyncConfigPartner(models.Model):
             po_vendor_id=po_vendor_id,
         )
 
+    def resolve_product_for_so_line(self, line, create_missing_products=False):
+        """Resolve ``product.product`` from a Fishbowl SO line dict (default_code / ``productId`` → part).
+
+        When ``create_missing_products`` is True, delegates to :meth:`create_product_from_fishbowl_line`
+        (may raise ``UserError``).
+        """
+        self.ensure_one()
+        Product = self.env['product.product']
+        num = (line.get('part_num') or line.get('productNum') or '').strip()
+        if num:
+            p = Product.search([('default_code', '=', num)], limit=1)
+            if p:
+                return p
+        part = None
+        if line.get('productId'):
+            part = self.fetch_part_by_product_id(line['productId'])
+        if part:
+            p = Product.search(
+                [('product_tmpl_id.fishbowl_part_id', '=', int(part['id']))],
+                limit=1,
+            )
+            if p:
+                return p
+        if create_missing_products:
+            return self.create_product_from_fishbowl_line(line, is_so_line=True)
+        return Product.browse()
+
     def create_product_from_fishbowl_part(self, part_id, so_line=None, po_line=None, po_vendor_id=None):
         """Create product.template + variant from Fishbowl part id."""
         self.ensure_one()

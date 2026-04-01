@@ -8,7 +8,7 @@ from markupsafe import Markup, escape
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
-from odoo.tools.float_utils import float_round
+from odoo.tools.float_utils import float_compare, float_round
 
 from .fishbowl_defaults import default_fishbowl_sync_config
 
@@ -269,6 +269,37 @@ class FishbowlImportSoWizard(models.TransientModel):
         tmpl = self.env.ref('fishbowl_open_import.product_template_fishbowl_so_adjustment')
         return tmpl.product_variant_id
 
+    def _add_fishbowl_paid_balance_line(self, so, ctx, config):
+        """Add a negative adjustment line so ``amount_total`` is zero when Fishbowl shows the SO paid.
+
+        Uses ``config.zero_balance_when_fishbowl_paid`` (Fishbowl MySQL config) so the option is not lost
+        when the import wizard confirm step drops hidden option fields.
+
+        Returns whether a line was created.
+        """
+        self.ensure_one()
+        if not getattr(config, 'zero_balance_when_fishbowl_paid', True):
+            return False
+        so.env.flush_all()
+        so.invalidate_recordset()
+        amt = so.amount_total
+        prec = so.currency_id.rounding or 0.01
+        if float_compare(amt, 0.0, precision_rounding=prec) <= 0:
+            return False
+        adj = self._get_fishbowl_adjustment_product()
+        neg = -amt
+        self.env['sale.order.line'].with_context(**ctx).create(
+            {
+                'order_id': so.id,
+                'product_id': adj.id,
+                'product_uom_qty': 1.0,
+                'price_unit': neg,
+                'technical_price_unit': neg,
+                'fishbowl_line_label': 'Fishbowl: paid in full (import adjustment to zero balance)',
+            }
+        )
+        return True
+
     def _fishbowl_line_display_label(self, line):
         """Description for adjustment lines (product # + Fishbowl text)."""
         parts = []
@@ -302,28 +333,17 @@ class FishbowlImportSoWizard(models.TransientModel):
 
     def _resolve_product(self, config, line):
         Product = self.env['product.product']
-        num = (line.get('part_num') or line.get('productNum') or '').strip()
-        if num:
-            p = Product.search([('default_code', '=', num)], limit=1)
-            if p:
-                return p
-        part = None
-        if line.get('productId'):
-            part = config.fetch_part_by_product_id(line['productId'])
-        if part:
-            p = Product.search(
-                [('product_tmpl_id.fishbowl_part_id', '=', int(part['id']))],
-                limit=1,
-            )
-            if p:
-                return p
         if self.create_missing_products:
             try:
-                return config.create_product_from_fishbowl_line(line, is_so_line=True)
+                p = config.resolve_product_for_so_line(line, create_missing_products=True)
             except UserError:
                 if self._is_fishbowl_adjustment_import_line(line):
                     return self._get_fishbowl_adjustment_product()
                 raise
+        else:
+            p = config.resolve_product_for_so_line(line, create_missing_products=False)
+        if p:
+            return p
         if self._is_fishbowl_adjustment_import_line(line):
             return self._get_fishbowl_adjustment_product()
         return Product.browse()
@@ -429,6 +449,8 @@ class FishbowlImportSoWizard(models.TransientModel):
         imported = 0
         failed = 0
         headers = self._get_so_headers()
+        config.enrich_so_headers_payment_flags(headers)
+        config.enrich_so_headers_payment_memo_hints(headers)
         for hdr in headers:
             try:
                 with self.env.cr.savepoint():
@@ -558,6 +580,15 @@ class FishbowlImportSoWizard(models.TransientModel):
                     self._apply_so_state(so, mapped_state)
                     if self.fishbowl_ship_import_without_stock:
                         config.fishbowl_apply_skip_shipped_lines_after_confirm(so)
+                    if hdr.get('fishbowl_paid_in_full') and self._add_fishbowl_paid_balance_line(so, ctx, config):
+                        Log.log_line(
+                            'so',
+                            'Fishbowl order paid in full: added adjustment line so Odoo order total is zero.',
+                            level='info',
+                            fishbowl_ref=hdr.get('num'),
+                            batch_id=batch,
+                            sale_order=so,
+                        )
                     if credit_return_lines:
                         self._post_credit_return_chatter_note(so, credit_return_lines, ctx)
                         Log.log_line(
@@ -569,6 +600,43 @@ class FishbowlImportSoWizard(models.TransientModel):
                             batch_id=batch,
                             sale_order=so,
                         )
+                    if config.create_credit_return_receipts and credit_return_lines:
+                        try:
+                            config.run_credit_return_receipt_for_sale_order(
+                                so,
+                                lambda line: self._resolve_product(config, line),
+                                fishbowl_ref=hdr.get('num'),
+                                batch_id=batch,
+                                Log=Log,
+                                import_ctx=ctx,
+                                silent=True,
+                                credit_return_lines=credit_return_lines,
+                                credit_returns_skipped_from_so=True,
+                            )
+                        except Exception as cr_err:
+                            _logger.exception(
+                                'Fishbowl credit return receipt failed for SO %s: %s',
+                                hdr.get('num'),
+                                cr_err,
+                            )
+                            Log.log_line(
+                                'so',
+                                'Credit return receipt not created: %s' % cr_err,
+                                level='warning',
+                                fishbowl_ref=hdr.get('num'),
+                                batch_id=batch,
+                                sale_order=so,
+                            )
+                            chatter_ctx = self._memo_chatter_ctx(ctx)
+                            so.with_context(**chatter_ctx).message_post(
+                                body=Markup(
+                                    '<p><strong>Fishbowl credit return receipt failed</strong></p>'
+                                    '<p>%s</p>'
+                                )
+                                % escape(str(cr_err)),
+                                subtype_xmlid='mail.mt_note',
+                                message_type='comment',
+                            )
                     # action_confirm() sets date_order to now; recreate_date is blocked on create — fix via SQL.
                     config.apply_odoo_order_dates_from_fishbowl_header(so, hdr)
                     if self.post_fishbowl_note_to_chatter and note_raw and str(note_raw).strip():
