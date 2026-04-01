@@ -43,7 +43,13 @@ import { delay } from "@web/core/utils/concurrency";
 import { FormController } from "@web/views/form/form_controller";
 import { Counter, EmbeddedWrapperMixin } from "./_helpers/embedded_component";
 import { moveSelectionOutsideEditor, setSelection } from "./_helpers/selection";
-import { insertText, pasteOdooEditorHtml, pasteText, undo } from "./_helpers/user_actions";
+import {
+    insertText,
+    pasteHtml,
+    pasteOdooEditorHtml,
+    pasteText,
+    undo,
+} from "./_helpers/user_actions";
 import { unformat } from "./_helpers/format";
 import { expandToolbar } from "./_helpers/toolbar";
 import { expectElementCount } from "./_helpers/ui_expectations";
@@ -1722,6 +1728,60 @@ test("'checklist' toolbar option is not available when 'allowChecklist' = false"
     expect("button[name='checklist']").toHaveCount(0);
 });
 
+test("typing '[] ' does not create a checklist when 'allowChecklist' is false", async () => {
+    Partner._records = [
+        {
+            id: 1,
+            txt: "<p><br></p>",
+        },
+    ];
+    await mountView({
+        type: "form",
+        resId: 1,
+        resModel: "partner",
+        arch: `
+            <form>
+                <field name="txt" widget="html" options="{'allowChecklist': false}"/>
+            </form>`,
+    });
+    setSelectionInHtmlField();
+    await insertText(htmlEditor, "[] ");
+    expect(queryOne(".odoo-editor-editable")).toHaveInnerHTML("<p>[] </p>");
+});
+
+test("should not paste checklist when allowchecklist is false", async () => {
+    Partner._records = [
+        {
+            id: 1,
+            txt: "<p><br></p>",
+        },
+    ];
+    await mountView({
+        type: "form",
+        resId: 1,
+        resModel: "partner",
+        arch: `
+            <form>
+                <field name="txt" widget="html" options="{'allowChecklist': false}"/>
+            </form>`,
+    });
+    setSelectionInHtmlField();
+    pasteOdooEditorHtml(
+        htmlEditor,
+        `<ul class="o_checklist"><li><div class="o-paragraph">1</div><ul class="o_checklist"><li><div class="o-paragraph">2</div><ul class="o_checklist"><li>3</li></ul></li></ul></li></ul>`
+    );
+    expect(queryOne(".odoo-editor-editable")).toHaveInnerHTML(
+        `<div class="o-paragraph">1</div><div class="o-paragraph">2</div><div class="o-paragraph">3</div>`
+    );
+    pasteHtml(
+        htmlEditor,
+        `<ul class="o_checklist"><li><div class="o-paragraph">1</div><ul class="o_checklist"><li><div class="o-paragraph">2</div><ul class="o_checklist"><li>3</li></ul></li></ul></li></ul>`
+    );
+    expect(queryOne(".odoo-editor-editable")).toHaveInnerHTML(
+        `<div class="o-paragraph">1</div><div class="o-paragraph">2</div><div class="o-paragraph">31</div><div class="o-paragraph">2</div><div class="o-paragraph">3</div>`
+    );
+});
+
 describe("sandbox", () => {
     const recordWithComplexHTML = {
         id: 1,
@@ -2631,11 +2691,12 @@ describe("save image", () => {
         expect(b64img).toHaveClass("o_b64_image_to_save");
 
         // Switch tab, this should trigger the image save.
-        await contains(".o_notebook_headers .nav-link:not(.active)").click();
-        await delay(50);
-        // reswitch tab, and check the image was saved properly.
-        await contains(".o_notebook_headers .nav-link:not(.active)").click();
-        await waitFor(".odoo-editor-editable");
+        await contains(".o_notebook_headers .nav-link:not(.active)[name='empty']").click();
+        await waitFor(".o_notebook_headers .nav-link.active[name='empty']");
+        // Reswitch tab, and check the image was saved properly.
+        await contains(".o_notebook_headers .nav-link:not(.active)[name='html']").click();
+        await waitFor(".o_notebook_headers .nav-link.active[name='html']");
+        await waitFor(".odoo-editor-editable", { timeout: 1500 });
         const savedImg = htmlEditor.editable.querySelector("img");
         expect(savedImg.getAttribute("src")).toBe("/test_image_url.png?access_token=1234");
         expect(savedImg).not.toHaveClass("o_b64_image_to_save");
