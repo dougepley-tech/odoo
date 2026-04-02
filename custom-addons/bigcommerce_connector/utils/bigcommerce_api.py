@@ -16,6 +16,12 @@ REQUEST_RETRY_EXCEPTIONS = (
 )
 
 
+class _OrdersList(list):
+    """List from GET /v2/orders; may carry total row count from X-BC-Total-Count header."""
+
+    pass
+
+
 class BigCommerceAPI:
     """BigCommerce API Client (V3)"""
     
@@ -114,15 +120,21 @@ class BigCommerceAPI:
                     _logger.error(f"Response text (first 500 chars): {response.text[:500]}")
                     raise exceptions.UserError(f"Invalid JSON response from BigCommerce API: {str(json_error)}")
                 
-                # Check for pagination metadata in response headers (V3 API)
+                # Pagination totals: V2 list endpoints (e.g. /v2/orders) use X-BC-Total-Count
                 total_count = None
-                if 'X-Total-Count' in response.headers:
+                if 'X-BC-Total-Count' in response.headers:
+                    try:
+                        total_count = int(response.headers['X-BC-Total-Count'])
+                        _logger.info(f"Found total count in X-BC-Total-Count header: {total_count}")
+                    except (ValueError, TypeError):
+                        pass
+                if total_count is None and 'X-Total-Count' in response.headers:
                     try:
                         total_count = int(response.headers['X-Total-Count'])
                         _logger.info(f"Found total count in X-Total-Count header: {total_count}")
                     except (ValueError, TypeError):
                         pass
-                
+
                 # Also check if result is a dict with meta/data structure (V3 API)
                 if isinstance(result, dict):
                     if 'meta' in result and 'pagination' in result['meta']:
@@ -130,10 +142,14 @@ class BigCommerceAPI:
                         if 'total' in pagination:
                             total_count = pagination['total']
                             _logger.info(f"Found total count in meta.pagination.total: {total_count}")
-                
+
                 # Store total count in result if found
                 if total_count is not None and isinstance(result, dict):
                     result['_total_count'] = total_count
+                elif total_count is not None and isinstance(result, list):
+                    wrapped = _OrdersList(result)
+                    wrapped._total_count = total_count
+                    result = wrapped
                 
                 _logger.debug(f"Response data type: {type(result)}, length: {len(result) if isinstance(result, (list, dict)) else 'N/A'}")
                 if isinstance(result, (list, dict)):
@@ -569,7 +585,8 @@ class BigCommerceAPI:
         This method automatically uses V2 API regardless of the default api_version setting.
         
         Returns:
-            - List of orders if successful
+            - List of orders if successful (may be an ``_OrdersList`` subclass with
+              ``_total_count`` set from the ``X-BC-Total-Count`` response header)
             - None if 404 (not found) or 403 (permission denied)
             - Raises UserError for other errors
         """
@@ -597,7 +614,50 @@ class BigCommerceAPI:
         
         # V2 API returns a list directly
         return result if isinstance(result, list) else []
-    
+
+    def get_orders_count(self, **filters):
+        """Return total order count for the same filters as :meth:`get_orders` (GET /v2/orders/count).
+
+        BigCommerce V2 list responses often omit X-BC-Total-Count; the count endpoint is the
+        supported way to get a total matching min/max dates and other query params.
+
+        Returns:
+            int: number of orders matching filters
+            None: if the request failed with 404 or could not be parsed
+        """
+        params = dict(filters)
+        params.pop('page', None)
+        params.pop('limit', None)
+
+        original_api_version = self.api_version
+        original_base_url = self.base_url
+        try:
+            self.api_version = 'v2'
+            self.base_url = f"https://api.bigcommerce.com/stores/{self.store_hash}/v2"
+            result = self._make_request('GET', 'orders/count', params=params if params else None)
+        finally:
+            self.api_version = original_api_version
+            self.base_url = original_base_url
+
+        if result is None:
+            return None
+        if isinstance(result, dict):
+            if 'count' in result:
+                try:
+                    return int(result['count'])
+                except (ValueError, TypeError):
+                    return None
+            # Some responses nest totals
+            if 'data' in result and isinstance(result['data'], dict) and 'count' in result['data']:
+                try:
+                    return int(result['data']['count'])
+                except (ValueError, TypeError):
+                    return None
+        try:
+            return int(result)
+        except (ValueError, TypeError):
+            return None
+
     def get_order(self, order_id):
         """Get a single order by ID
         

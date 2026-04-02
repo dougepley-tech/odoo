@@ -3,7 +3,8 @@
 # Fishbowl ship / shipitem / pick queries target typical MySQL schemas (camelCase ids).
 # pickitem uses soItemId (capital I), not soitemId — wrong casing breaks queries on case-sensitive MySQL.
 # pick often has no soId/orderId; link SO lines via pickitem.soItemId → soitem.id or pickitem.orderId → so.id.
-# Pick qty: only pickitemstatus whitelist (Picked / Finished / …) — exclude Started, Short, etc.
+# Pick qty: pickitemstatus whitelist (Picked / Finished / Committed / …) — exclude Started, Short, etc.
+# ``Committed`` in Fishbowl means qty is already picked; those lines must not stay on Odoo pick moves.
 # Kit/bundle: roll up child pick/ship qty onto parent for *totals* only; the SO line uses the parent
 # ``soitem`` id and Odoo explodes BOM moves. Distributing rolled-up sums across moves is wrong — we match
 # each move to a child ``soitem`` by product code and set done qty per component + parent kit move.
@@ -492,7 +493,8 @@ class FishbowlSyncConfig(models.Model):
         conn = self._get_connection()
         _pick_ok = """
             AND LOWER(TRIM(COALESCE(pis.name, ''))) IN (
-                'picked', 'finished', 'done', 'complete', 'completed', 'packed', 'fulfilled'
+                'picked', 'finished', 'done', 'complete', 'completed', 'packed', 'fulfilled',
+                'committed'
             )
         """
         _pick_ok_relaxed = """
@@ -500,7 +502,7 @@ class FishbowlSyncConfig(models.Model):
                 pi.statusId IS NULL
                 OR LOWER(TRIM(COALESCE(pis.name, ''))) IN (
                     'picked', 'finished', 'done', 'complete', 'completed', 'packed', 'fulfilled',
-                    'picked complete', 'pick complete', 'closed'
+                    'picked complete', 'pick complete', 'closed', 'committed'
                 )
             )
             AND (
@@ -789,13 +791,62 @@ class FishbowlSyncConfig(models.Model):
         rounding = max(0.0001, (qty_ordered or 0.01) * 1e-6)
         return float_compare(qty_ship, qty_ordered, precision_rounding=rounding) >= 0
 
+    def fishbowl_sales_line_fully_picked_for_import(
+        self,
+        so_fb_id,
+        fb_line,
+        qty_ordered,
+        picked_by_item,
+        parent_map,
+        picked_by_item_raw=None,
+        parent_to_children=None,
+        soitem_detail=None,
+    ):
+        """True if Fishbowl shows this line fully picked (pickitem qty incl. *Committed* status).
+
+        Used with ``fishbowl_ship_import_without_stock`` so Odoo does not leave open pick moves for
+        lines Fishbowl already picked (Committed / Picked / … on pickitem).
+        """
+        self.ensure_one()
+        try:
+            qty_ordered = float(qty_ordered or 0)
+        except (TypeError, ValueError):
+            qty_ordered = 0.0
+        if qty_ordered <= 0:
+            return False
+        sid = int(fb_line.get('soitem_id') or 0)
+        if not sid:
+            return False
+        children = (parent_to_children or {}).get(sid, [])
+        if children and picked_by_item_raw is not None and soitem_detail:
+            kit_verified = True
+            for cid in children:
+                info = soitem_detail.get(int(cid))
+                if not info:
+                    kit_verified = False
+                    break
+                q_req = float(info.get('qty_ordered') or 0)
+                q_fb = float(picked_by_item_raw.get(int(cid), 0) or 0)
+                rounding = max(0.0001, (q_req or 0.01) * 1e-6)
+                if float_compare(q_fb, q_req, precision_rounding=rounding) < 0:
+                    return False
+            if kit_verified:
+                return True
+        if not picked_by_item:
+            return False
+        pick_alloc = float(picked_by_item.get(sid, 0) or 0)
+        pick_eff = self._effective_fb_qty_for_soitem(sid, picked_by_item, parent_map)
+        qty_pick = max(pick_alloc, pick_eff)
+        rounding = max(0.0001, (qty_ordered or 0.01) * 1e-6)
+        return float_compare(qty_pick, qty_ordered, precision_rounding=rounding) >= 0
+
     def fishbowl_apply_skip_shipped_lines_after_confirm(self, sale_order):
         """After SO confirm: cancel stock moves and set ``fishbowl_skip_procurement`` when Fishbowl shows shipped.
 
         When ``fishbowl_ship_import_without_stock`` is enabled, the same check runs on each SOL at
         create — but kit parent/child detection or timing can miss. Re-running here removes open
         pick lines that would stay *Not Available* in Odoo when there is no local stock even though
-        Fishbowl already shipped.
+        Fishbowl already shipped, and when Fishbowl pickitem shows full qty picked (including Committed).
         """
         self.ensure_one()
         so = sale_order
@@ -811,8 +862,10 @@ class FishbowlSyncConfig(models.Model):
         except ValueError:
             adj_prod = None
         shipped_by_item_raw = self.fetch_so_shipment_qty_by_soitem(so_fb_id)
+        picked_by_item_raw = self.fetch_so_pick_qty_by_soitem(so_fb_id)
         parent_map = self.fetch_soitem_kit_parent_map(so_fb_id)
         shipped_by_item = self._rollup_fb_qty_by_parent_soitem(shipped_by_item_raw, parent_map)
+        picked_by_item = self._rollup_fb_qty_by_parent_soitem(picked_by_item_raw, parent_map)
         parent_to_children = {}
         for cid, pid in parent_map.items():
             if pid:
@@ -839,6 +892,15 @@ class FishbowlSyncConfig(models.Model):
                 parent_to_children=parent_to_children,
                 soitem_detail=soitem_detail,
                 fulfilled_soitem_ids=fulfilled_soitem_ids,
+            ) and not self.fishbowl_sales_line_fully_picked_for_import(
+                so_fb_id,
+                fb_line,
+                qty,
+                picked_by_item,
+                parent_map,
+                picked_by_item_raw=picked_by_item_raw,
+                parent_to_children=parent_to_children,
+                soitem_detail=soitem_detail,
             ):
                 continue
             moves = line.move_ids.filtered(lambda m: m.state not in ('done', 'cancel'))

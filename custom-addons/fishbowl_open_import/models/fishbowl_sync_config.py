@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
-from odoo.tools.float_utils import float_compare
+from odoo.tools.float_utils import float_compare, float_round
 
 _logger = logging.getLogger(__name__)
 
@@ -106,11 +106,21 @@ class FishbowlSyncConfig(models.Model):
         'Only use when you accept possible double-count risk if goods were already received in Fishbowl.',
     )
     zero_balance_when_fishbowl_paid = fields.Boolean(
-        string='Zero balance when paid in Fishbowl',
+        string='Match Odoo total to Fishbowl (paid / header total)',
         default=True,
-        help='When Fishbowl shows the order as fully paid, add one adjustment line so the Odoo order total '
-        'is zero. Stored on this config so the option is not lost when the import wizard moves to the '
-        'confirm step (OWL drops hidden booleans on the options step).',
+        help='When enabled, add adjustment line(s) so the Odoo order total matches Fishbowl: '
+        '**(1)** paid in full → zero balance in Odoo; **(2)** partial payment → Odoo total reflects '
+        'amount still due (header total minus payments from Fishbowl); **(3)** Fishbowl ``so.total`` '
+        'when it differs from imported lines (e.g. net **$0** RMA orders). '
+        'Stored on this config so the option is not lost when the import wizard moves to the confirm step.',
+    )
+    fishbowl_paid_when_sopayment_row_exists = fields.Boolean(
+        string='Treat SO as paid if any sopayment row exists',
+        default=False,
+        help='Last resort when MySQL does not expose payment amounts in standard columns. If **any** row '
+        'exists in Fishbowl ``sopayment`` / payment views for this SO **and** balance due is zero (or '
+        'missing), the import assumes **paid in full**. If Fishbowl exposes a positive balance due, '
+        'partial payments are **not** treated as paid in full.',
     )
 
     _company_uniq = models.Constraint(
@@ -304,6 +314,39 @@ class FishbowlSyncConfig(models.Model):
                 return u
         return Users.browse()
 
+    def find_odoo_salesperson_user_by_fishbowl_login(self, hdr):
+        """Map Fishbowl ``sysuser.userName`` (login) to ``res.users.login``.
+
+        Fishbowl often stores the rep as a single login string (e.g. ``jackie.whetzler``) while
+        ``firstName``/``lastName`` may be empty or formatted differently than ``res.users.name``.
+        """
+        self.ensure_one()
+        Users = self.env['res.users'].sudo()
+        company = self.company_id
+        comp_domain = ['|', ('company_ids', 'in', company.id), ('company_ids', '=', False)]
+        if not hdr:
+            return Users.browse()
+        raw = self._fb_so_hdr_get(hdr, 'sales_rep_username', 'username', 'userName')
+        if not raw:
+            return Users.browse()
+        login = str(raw).strip()
+        if not login:
+            return Users.browse()
+        u = Users.search([('login', '=', login)] + comp_domain, limit=1)
+        if u:
+            return u
+        u = Users.search([('login', '=ilike', login)] + comp_domain, limit=1)
+        if u:
+            return u
+        # Local part if Fishbowl stores an email in userName
+        if '@' in login:
+            local = login.split('@', 1)[0].strip()
+            if local:
+                u = Users.search([('login', '=ilike', local)] + comp_domain, limit=1)
+                if u:
+                    return u
+        return Users.browse()
+
     def _fishbowl_salesman_login_key(self, hdr):
         """Normalize Fishbowl ``sysuser`` login for channel rules (uppercase, no spaces)."""
         if not hdr:
@@ -347,9 +390,14 @@ class FishbowlSyncConfig(models.Model):
                 vals['team_id'] = False
             sale_order.write(vals)
             return
-        sp = self.find_odoo_salesperson_user(hdr)
+        sp = self.find_odoo_salesperson_user_by_fishbowl_login(hdr)
+        if not sp:
+            sp = self.find_odoo_salesperson_user(hdr)
         if sp:
             sale_order.write({'user_id': sp.id})
+        else:
+            # Avoid leaving the import user as salesperson when Fishbowl rep does not map.
+            sale_order.write({'user_id': False})
 
     def fetch_open_sales_orders(self, allowed_status_names=None):
         """Return list of SO header dicts from Fishbowl (status whitelist only).
@@ -443,14 +491,532 @@ class FishbowlSyncConfig(models.Model):
             conn.close()
         return rows
 
-    def enrich_so_headers_payment_flags(self, headers):
-        """Set ``fishbowl_paid_in_full`` on each header dict when Fishbowl shows the SO as paid.
+    def _fetch_so_line_total_sum_by_so_ids(self, so_ids):
+        """Sum of ``soitem.totalPrice`` per SO (Fishbowl header ``so.total`` can differ from line sum)."""
+        if not so_ids:
+            return {}
+        ph = ','.join(['%s'] * len(so_ids))
+        conn = self._get_connection()
+        out = {}
+        try:
+            with conn.cursor() as cur:
+                for sql in (
+                    f'SELECT soId, SUM(totalPrice) AS line_sum FROM soitem WHERE soId IN ({ph}) GROUP BY soId',
+                    f'SELECT soid, SUM(totalPrice) AS line_sum FROM soitem WHERE soid IN ({ph}) GROUP BY soid',
+                ):
+                    try:
+                        cur.execute(sql, tuple(so_ids))
+                        for row in cur.fetchall():
+                            sid = None
+                            ls = None
+                            for k, v in (row or {}).items():
+                                lk = str(k).lower()
+                                if lk == 'soid':
+                                    sid = int(v) if v is not None else None
+                                elif lk == 'line_sum':
+                                    ls = v
+                            if sid is not None:
+                                try:
+                                    out[sid] = float(ls or 0)
+                                except (TypeError, ValueError):
+                                    out[sid] = 0.0
+                        if out:
+                            break
+                    except Exception:
+                        out = {}
+                        continue
+        finally:
+            conn.close()
+        return out
 
-        Uses ``so.paymentTotal`` vs ``so.total``. If that does not indicate paid, falls back to
-        ``so.balanceDue`` (when selected) so cart-integrated orders may still match after payment.
-        If the query fails (schema difference), headers are left unchanged (no flag / not paid).
+    def _fetch_so_payment_total_sum_by_so_ids(self, so_ids):
+        """Best-effort sum of payments per SO from Fishbowl payment storage.
+
+        When ``totalpaidview`` exposes ``soId`` + ``amount`` (typical Fishbowl schema), that aggregate
+        is **authoritative** for those SO ids: we do not merge higher values from other queries
+        (JOIN-by-soNum variants could inflate totals vs partial payments).
+
+        For SO ids without a ``totalpaidview`` row, we still merge the maximum across other strategies
+        (``payment`` / ``sopayment`` / ``paymentview`` by ``soNum``, etc.).
+        """
+        if not so_ids:
+            return {}
+        ph = ','.join(['%s'] * len(so_ids))
+        tpl_ids = tuple(int(x) for x in so_ids)
+        conn = self._get_connection()
+        out = {}
+        tpv_locked = set()
+        try:
+            with conn.cursor() as cur:
+                for sql in (
+                    f'SELECT soId, COALESCE(SUM(amount), 0) AS paid FROM totalpaidview WHERE soId IN ({ph}) GROUP BY soId',
+                    f'SELECT soid, COALESCE(SUM(amount), 0) AS paid FROM totalpaidview WHERE soid IN ({ph}) GROUP BY soid',
+                    # Some Fishbowl builds key the view by order id under ``orderId`` (same value as ``so.id``).
+                    f'SELECT orderId AS soId, COALESCE(SUM(amount), 0) AS paid FROM totalpaidview WHERE orderId IN ({ph}) GROUP BY orderId',
+                    f'SELECT orderid AS soId, COALESCE(SUM(amount), 0) AS paid FROM totalpaidview WHERE orderid IN ({ph}) GROUP BY orderid',
+                ):
+                    try:
+                        cur.execute(sql, tpl_ids)
+                        rows = cur.fetchall()
+                    except Exception:
+                        continue
+                    if not rows:
+                        continue
+                    for row in rows or []:
+                        d = dict(row or {})
+                        sid = None
+                        pv = None
+                        for k, v in d.items():
+                            lk = str(k).lower()
+                            if lk == 'soid':
+                                sid = int(v) if v is not None else None
+                            elif lk == 'paid':
+                                pv = v
+                        if sid is None:
+                            continue
+                        if pv is None:
+                            for k, v in d.items():
+                                if str(k).lower() == 'soid':
+                                    continue
+                                try:
+                                    pv = float(v)
+                                    break
+                                except (TypeError, ValueError):
+                                    continue
+                        try:
+                            val = float(pv or 0)
+                        except (TypeError, ValueError):
+                            val = 0.0
+                        out[sid] = val
+                        tpv_locked.add(sid)
+                    break
+            with conn.cursor() as cur:
+                for sql in (
+                    # Fishbowl ``paymentview`` often links by ``soNum`` (varchar), not ``soId``.
+                    f'SELECT so.id AS soId, COALESCE(SUM(pv.amount), 0) AS paid FROM so '
+                    f'INNER JOIN paymentview pv ON TRIM(pv.soNum) = TRIM(so.num) WHERE so.id IN ({ph}) '
+                    f'GROUP BY so.id',
+                    f'SELECT soId, COALESCE(SUM(amount), 0) AS paid FROM payment WHERE soId IN ({ph}) GROUP BY soId',
+                    f'SELECT soid, COALESCE(SUM(amount), 0) AS paid FROM payment WHERE soid IN ({ph}) GROUP BY soid',
+                    f'SELECT soId, COALESCE(SUM(totalAmount), 0) AS paid FROM payment WHERE soId IN ({ph}) GROUP BY soId',
+                    f'SELECT soid, COALESCE(SUM(totalAmount), 0) AS paid FROM payment WHERE soid IN ({ph}) GROUP BY soid',
+                    f'SELECT soId, COALESCE(SUM(amount), 0) AS paid FROM sopayment WHERE soId IN ({ph}) GROUP BY soId',
+                    f'SELECT soid, COALESCE(SUM(amount), 0) AS paid FROM sopayment WHERE soid IN ({ph}) GROUP BY soid',
+                    f'SELECT soId, COALESCE(SUM(totalAmount), 0) AS paid FROM sopayment WHERE soId IN ({ph}) GROUP BY soId',
+                    f'SELECT soid, COALESCE(SUM(totalAmount), 0) AS paid FROM sopayment WHERE soid IN ({ph}) GROUP BY soid',
+                    # Amount often lives on ``payment``; ``sopayment`` only links SO ↔ payment (BigCommerce / card).
+                    f'SELECT sp.soId, COALESCE(SUM(p.amount), 0) AS paid FROM sopayment sp '
+                    f'INNER JOIN payment p ON p.id = sp.paymentId WHERE sp.soId IN ({ph}) GROUP BY sp.soId',
+                    f'SELECT sp.soid, COALESCE(SUM(p.amount), 0) AS paid FROM sopayment sp '
+                    f'INNER JOIN payment p ON p.id = sp.paymentId WHERE sp.soid IN ({ph}) GROUP BY sp.soid',
+                    f'SELECT sp.soId, COALESCE(SUM(p.amount), 0) AS paid FROM sopayment sp '
+                    f'INNER JOIN payment p ON p.id = sp.paymentid WHERE sp.soId IN ({ph}) GROUP BY sp.soId',
+                    f'SELECT sp.soId, COALESCE(SUM(p.amount), 0) AS paid FROM sopayment sp '
+                    f'INNER JOIN payment p ON p.id = sp.payment_id WHERE sp.soId IN ({ph}) GROUP BY sp.soId',
+                    f'SELECT sp.soId, COALESCE(SUM(p.totalAmount), 0) AS paid FROM sopayment sp '
+                    f'INNER JOIN payment p ON p.id = sp.paymentId WHERE sp.soId IN ({ph}) GROUP BY sp.soId',
+                    f'SELECT sp.soId, COALESCE(SUM(p.totalAmount), 0) AS paid FROM sopayment sp '
+                    f'INNER JOIN payment p ON p.id = sp.paymentid WHERE sp.soId IN ({ph}) GROUP BY sp.soId',
+                ):
+                    try:
+                        cur.execute(sql, tuple(so_ids))
+                        for row in cur.fetchall():
+                            sid = None
+                            pv = None
+                            for k, v in (row or {}).items():
+                                lk = str(k).lower()
+                                if lk == 'soid':
+                                    sid = int(v) if v is not None else None
+                                elif lk == 'paid':
+                                    pv = v
+                            if sid is None:
+                                continue
+                            if sid in tpv_locked:
+                                continue
+                            try:
+                                val = float(pv or 0)
+                            except (TypeError, ValueError):
+                                val = 0.0
+                            prev = float(out.get(sid, 0.0))
+                            if val > prev:
+                                out[sid] = val
+                    except Exception:
+                        continue
+        finally:
+            conn.close()
+        # Row-level sums: GROUP BY can miss amounts when Fishbowl uses a non-standard column name
+        # (e.g. BigCommerce card rows in ``sopayment``). Same pattern as scanning credit-return lines.
+        raw = self._fetch_so_payment_total_sum_by_raw_rows(so_ids)
+        for sid, val in raw.items():
+            if int(sid) in tpv_locked:
+                continue
+            try:
+                valf = float(val or 0)
+            except (TypeError, ValueError):
+                continue
+            prev = float(out.get(int(sid), 0.0))
+            if valf > prev:
+                out[int(sid)] = valf
+        # Brute ``SELECT *`` on physical tables only. ``paymentview`` / ``totalpaidview`` are already
+        # covered by JOINs above and raw rows; re-scanning them tripled work per import.
+        for tbl in ('sopayment', 'payment'):
+            brute = self._fetch_so_payment_brute_currency_sums_from_table(tbl, so_ids)
+            for sid, val in brute.items():
+                if int(sid) in tpv_locked:
+                    continue
+                try:
+                    valf = float(val or 0)
+                except (TypeError, ValueError):
+                    continue
+                prev = float(out.get(int(sid), 0.0))
+                if valf > prev:
+                    out[int(sid)] = valf
+        return out
+
+    _FB_PAYMENT_TABLE_WHITELIST = frozenset(
+        {'sopayment', 'totalpaidview', 'paymentview', 'payment'}
+    )
+
+    def _fishbowl_so_id_to_num_map(self, so_ids):
+        """Map Fishbowl ``so.id`` → ``so.num`` (for views keyed by ``soNum``)."""
+        if not so_ids:
+            return {}
+        ph = ','.join(['%s'] * len(so_ids))
+        conn = self._get_connection()
+        out = {}
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f'SELECT id, num FROM so WHERE id IN ({ph})', tuple(int(x) for x in so_ids))
+                for row in cur.fetchall() or []:
+                    rid = row.get('id')
+                    if rid is not None:
+                        out[int(rid)] = (row.get('num') or '').strip()
+        except Exception as e:
+            _logger.debug('Fishbowl so id→num: %s', e)
+        finally:
+            conn.close()
+        return out
+
+    def _fetch_so_payment_brute_currency_sums_from_table(self, table, so_ids):
+        """Sum payments by taking, per row, the largest plausible currency float from ``table``.
+
+        Fishbowl builds differ: some use ``sopayment``/``payment`` tables; others only expose
+        ``totalpaidview`` / ``paymentview`` (no ``sopayment`` in MySQL). Column names vary, so we scan.
+
+        ``paymentview`` / some builds of ``totalpaidview`` use ``soNum`` (matches ``so.num``), not ``soId``.
+        """
+        if not so_ids or table not in self._FB_PAYMENT_TABLE_WHITELIST:
+            return {}
+        if table in ('paymentview', 'totalpaidview'):
+            return self._fetch_so_payment_brute_from_sonum_view(table, so_ids)
+        ph = ','.join(['%s'] * len(so_ids))
+        tpl = tuple(int(x) for x in so_ids)
+        sums = defaultdict(float)
+        skip_substrings = ('date', 'time')
+        skip_exact = {'soid', 'id'}
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                for sql in (
+                    f'SELECT * FROM {table} WHERE soId IN ({ph})',
+                    f'SELECT * FROM {table} WHERE soid IN ({ph})',
+                ):
+                    try:
+                        cur.execute(sql, tpl)
+                        rows = cur.fetchall()
+                    except Exception:
+                        continue
+                    if not rows:
+                        continue
+                    for row in rows:
+                        d = dict(row or {})
+                        sid = None
+                        for k, v in d.items():
+                            if k and str(k).lower() == 'soid' and v is not None:
+                                try:
+                                    sid = int(v)
+                                except (TypeError, ValueError):
+                                    sid = None
+                                break
+                        if sid is None:
+                            continue
+                        row_max = 0.0
+                        for k, v in d.items():
+                            if not k or v is None:
+                                continue
+                            kl = str(k).lower()
+                            if kl in skip_exact:
+                                continue
+                            if any(s in kl for s in skip_substrings):
+                                continue
+                            if kl == 'id' or kl.endswith('id'):
+                                continue
+                            try:
+                                fv = float(v)
+                            except (TypeError, ValueError):
+                                continue
+                            if fv <= 0 or fv > 1e8:
+                                continue
+                            if fv > row_max:
+                                row_max = fv
+                        if row_max > 0:
+                            sums[sid] += row_max
+                    break
+        finally:
+            conn.close()
+        return dict(sums)
+
+    def _fetch_so_payment_brute_from_sonum_view(self, table, so_ids):
+        """Sum ``amount`` from ``paymentview`` / ``totalpaidview`` rows matched by ``soNum`` = ``so.num``."""
+        id_to_num = self._fishbowl_so_id_to_num_map(so_ids)
+        num_to_id = {}
+        for i in so_ids:
+            n = id_to_num.get(int(i))
+            if n:
+                num_to_id[n] = int(i)
+        nums = sorted(num_to_id.keys())
+        if not nums:
+            return {}
+        ph = ','.join(['%s'] * len(nums))
+        tpl = tuple(nums)
+        sums = defaultdict(float)
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(f'SELECT * FROM {table} WHERE soNum IN ({ph})', tpl)
+                    rows = cur.fetchall()
+                except Exception:
+                    return {}
+                for row in rows or []:
+                    d = dict(row)
+                    sn = (d.get('soNum') or '').strip()
+                    sid = num_to_id.get(sn)
+                    if sid is None:
+                        continue
+                    amt = d.get('amount')
+                    if amt is not None:
+                        try:
+                            sums[sid] += float(amt)
+                        except (TypeError, ValueError):
+                            continue
+        finally:
+            conn.close()
+        return dict(sums)
+
+    def _fetch_so_payment_total_sum_by_raw_rows(self, so_ids):
+        """Sum ``sopayment`` / ``payment`` rows per SO using ``SELECT *`` + amount heuristics.
+
+        Aggregates with fixed column names can return 0 while individual rows hold the real amounts.
+        We take **max(sopayment sum, payment sum)** per SO so duplicate linkage across tables does not
+        double-count the same payment.
+        """
+        if not so_ids:
+            return {}
+        ph = ','.join(['%s'] * len(so_ids))
+        tpl = tuple(int(x) for x in so_ids)
+
+        def _soid_from_row(row):
+            d = dict(row or {})
+            for k, v in d.items():
+                if k and str(k).lower() == 'soid' and v is not None:
+                    try:
+                        return int(v)
+                    except (TypeError, ValueError):
+                        return None
+            return None
+
+        def _amount_from_row(d):
+            preferred = (
+                'amount',
+                'totalAmount',
+                'total_amount',
+                'paymentAmount',
+                'paymentamount',
+                'amountPaid',
+                'amountpaid',
+                'paidTotal',
+                'paidtotal',
+            )
+            for name in preferred:
+                for k, v in d.items():
+                    if k is None or v is None:
+                        continue
+                    if str(k).lower() == name.lower():
+                        try:
+                            return float(v)
+                        except (TypeError, ValueError):
+                            return None
+            for k, v in d.items():
+                if k is None or v is None:
+                    continue
+                kl = str(k).lower()
+                if 'amount' in kl and 'tax' not in kl and 'discount' not in kl:
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        continue
+            for k, v in d.items():
+                if k is None or v is None:
+                    continue
+                if str(k).lower() == 'total':
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        return None
+            return None
+
+        def _accumulate(table_variants):
+            acc = defaultdict(float)
+            conn = self._get_connection()
+            try:
+                with conn.cursor() as cur:
+                    for sql in table_variants:
+                        try:
+                            cur.execute(sql, tpl)
+                            rows = cur.fetchall()
+                        except Exception:
+                            continue
+                        if not rows:
+                            continue
+                        for row in rows:
+                            sid = _soid_from_row(row)
+                            if sid is None:
+                                continue
+                            amt = _amount_from_row(dict(row))
+                            if amt is not None:
+                                acc[sid] += amt
+                        break
+            finally:
+                conn.close()
+            return acc
+
+        sums_sp = _accumulate(
+            (
+                f'SELECT * FROM sopayment WHERE soId IN ({ph})',
+                f'SELECT * FROM sopayment WHERE soid IN ({ph})',
+            )
+        )
+        sums_py = _accumulate(
+            (
+                f'SELECT * FROM payment WHERE soId IN ({ph})',
+                f'SELECT * FROM payment WHERE soid IN ({ph})',
+            )
+        )
+        out = {}
+        for sid in so_ids:
+            i = int(sid)
+            m = max(
+                float(sums_sp.get(i, 0.0)),
+                float(sums_py.get(i, 0.0)),
+            )
+            if m > 0:
+                out[i] = m
+        return out
+
+    def _fishbowl_so_row_order_total(self, row):
+        """Best-effort order total from a Fishbowl ``so`` row (column names differ by version).
+
+        Many Fishbowl databases use **only** ``totalPrice`` / ``subTotal`` on ``so`` (no ``total``
+        column). Some builds omit header totals entirely—then callers fall back to ``soitem`` sums.
+        """
+        if not row:
+            return None
+        preferred = (
+            'total',
+            'totalPrice',
+            'subTotal',
+            'totalAmount',
+            'orderTotal',
+            'grandTotal',
+            'soTotal',
+            'totalMoney',
+        )
+        for name in preferred:
+            for k, v in row.items():
+                if k is None or v is None:
+                    continue
+                if str(k).lower() == name.lower():
+                    try:
+                        f = float(v)
+                        if f >= 0:
+                            return f
+                    except (TypeError, ValueError):
+                        continue
+        best = None
+        for k, v in row.items():
+            if k is None or v is None:
+                continue
+            kl = str(k).lower()
+            if 'total' not in kl:
+                continue
+            if 'tax' in kl or 'discount' in kl:
+                continue
+            if kl == 'totalcost':
+                continue
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                continue
+            if f <= 0:
+                continue
+            if best is None or f > best:
+                best = f
+        return best
+
+    def _fishbowl_so_row_payment_total_like(self, row):
+        """Best-effort payment amount from ``so`` row when such columns exist.
+
+        Many Fishbowl ``so`` tables have **no** payment columns at all (only ``subTotal`` /
+        ``totalPrice``). Paid-in-full is then inferred from ``sopayment`` / ``payment`` / line sums only.
+        """
+        if not row:
+            return None
+        for name in (
+            'paymentTotal',
+            'paymenttotal',
+            'amountPaid',
+            'amountpaid',
+            'paidTotal',
+            'paidtotal',
+            'paidAmount',
+            'paidamount',
+            'paid',
+        ):
+            for k, v in row.items():
+                if k is None or v is None:
+                    continue
+                if str(k).lower() == name.lower():
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        continue
+        for k, v in row.items():
+            if k is None or v is None:
+                continue
+            kl = str(k).lower()
+            if 'payment' in kl and 'total' in kl.replace('_', ''):
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    continue
+        return None
+
+    def enrich_so_headers_payment_flags(self, headers):
+        """Set ``fishbowl_paid_in_full`` and ``fishbowl_amount_paid`` on each header dict.
+
+        Uses header payment fields vs order total when present (rounded, 2¢ tolerance). Order total
+        comes from ``so.totalPrice`` / ``subTotal`` / etc., or **sum of** ``soitem.totalPrice``.
+        Many Fishbowl schemas have **no** payment or balance columns on ``so``—then only
+        ``sopayment`` / ``payment`` / ``totalpaidview`` rows can show paid-in-full. If the SO query
+        fails, every header is still set to ``fishbowl_paid_in_full = False`` and amount paid from MySQL
+        sums only.
         """
         self.ensure_one()
+        for h in headers or []:
+            h['fishbowl_paid_in_full'] = False
+            h['fishbowl_header_total'] = None
+            h['fishbowl_amount_paid'] = 0.0
         if not headers:
             return
         ids = []
@@ -465,7 +1031,10 @@ class FishbowlSyncConfig(models.Model):
         rows_by_id = {}
         try:
             with conn.cursor() as cur:
+                # ``SELECT *`` avoids Error 1054 when ``total`` / ``paymentTotal`` names differ by version.
                 sql_variants = (
+                    f'SELECT * FROM so WHERE id IN ({ph})',
+                    f"SELECT id, paymentTotal, total, balanceDue, amountPaid, paidTotal FROM so WHERE id IN ({ph})",
                     f"SELECT id, paymentTotal, total, balanceDue, amountPaid FROM so WHERE id IN ({ph})",
                     f"SELECT id, paymentTotal, total, balanceDue FROM so WHERE id IN ({ph})",
                     f"SELECT id, paymentTotal, total FROM so WHERE id IN ({ph})",
@@ -484,7 +1053,20 @@ class FishbowlSyncConfig(models.Model):
                         continue
         finally:
             conn.close()
+
+        line_sums = self._fetch_so_line_total_sum_by_so_ids(ids)
+        payment_sums = self._fetch_so_payment_total_sum_by_so_ids(ids)
+
+        def _apply_fishbowl_amount_paid_to_headers():
+            for h in headers or []:
+                hid = h.get('id')
+                if hid is None:
+                    continue
+                v = payment_sums.get(int(hid))
+                h['fishbowl_amount_paid'] = float(v) if v is not None else 0.0
+
         if not rows_by_id:
+            _apply_fishbowl_amount_paid_to_headers()
             return
 
         def _col(row, *names):
@@ -494,30 +1076,73 @@ class FishbowlSyncConfig(models.Model):
                         return v
             return None
 
+        def _col_first(row, *names):
+            for n in names:
+                v = _col(row, n)
+                if v is not None:
+                    return v
+            return None
+
+        def _payment_covers(pay, need):
+            """True when ``pay`` covers ``need`` after currency rounding to cents."""
+            try:
+                pf = float_round(float(pay or 0), precision_rounding=0.01)
+                nf = float_round(float(need or 0), precision_rounding=0.01)
+            except (TypeError, ValueError):
+                return False
+            if nf <= 0:
+                return False
+            return float_compare(pf, nf, precision_rounding=0.01) >= 0
+
+        prec = 0.01
+
         for h in headers:
             hid = h.get('id')
             if hid is None:
                 continue
             row = rows_by_id.get(int(hid))
             if not row:
-                h['fishbowl_paid_in_full'] = False
                 continue
-            pt = _col(row, 'paymentTotal', 'paymenttotal')
-            tot = _col(row, 'total')
+            totf = self._fishbowl_so_row_order_total(row)
+            if totf is None:
+                ls = line_sums.get(int(hid))
+                if ls is not None and ls > 0:
+                    totf = float(ls)
+                else:
+                    continue
+            try:
+                totf = float(totf)
+            except (TypeError, ValueError):
+                continue
+            h['fishbowl_header_total'] = float_round(totf, precision_rounding=0.01)
+            # Net-zero / credit header (e.g. Sale + Credit Return): no payment to compare; alignment
+            # uses ``fishbowl_header_total`` so Odoo can still match $0.
+            if totf <= 0:
+                continue
+            pt = self._fishbowl_so_row_payment_total_like(row)
+            if pt is None:
+                pt = _col(row, 'paymentTotal', 'paymenttotal')
             try:
                 ptf = float(pt or 0)
-                totf = float(tot or 0)
             except (TypeError, ValueError):
-                h['fishbowl_paid_in_full'] = False
-                continue
-            if totf <= 0:
-                h['fishbowl_paid_in_full'] = False
-                continue
-            # Paid when payments cover order total (small tolerance for rounding).
-            paid = ptf + 0.01 >= totf
+                ptf = 0.0
+            line_sum = line_sums.get(int(hid))
+            paid = _payment_covers(ptf, totf)
+            if not paid and line_sum is not None and line_sum > 0:
+                # Only compare to line sum when it matches header total (tax/rounding); not when they
+                # diverge materially (partial payment vs understated lines).
+                if self._fishbowl_line_total_matches_header_total(totf, line_sum, prec):
+                    paid = _payment_covers(ptf, line_sum)
             if not paid:
-                # amountPaid / paidTotal (Fishbowl column names vary; cart sync may fill these first).
-                for ap_name in ('amountPaid', 'amountpaid', 'paidTotal', 'paidtotal', 'paid'):
+                for ap_name in (
+                    'amountPaid',
+                    'amountpaid',
+                    'paidTotal',
+                    'paidtotal',
+                    'paid',
+                    'paidAmount',
+                    'paidamount',
+                ):
                     apv = _col(row, ap_name)
                     if apv is None:
                         continue
@@ -525,49 +1150,436 @@ class FishbowlSyncConfig(models.Model):
                         apf = float(apv)
                     except (TypeError, ValueError):
                         continue
-                    if apf + 0.01 >= totf:
+                    line_ok = (
+                        line_sum is not None
+                        and line_sum > 0
+                        and self._fishbowl_line_total_matches_header_total(totf, line_sum, prec)
+                        and _payment_covers(apf, line_sum)
+                    )
+                    if _payment_covers(apf, totf) or line_ok:
                         paid = True
                         break
             if not paid:
-                # Fallback: balanceDue — cart-integrated orders may lag paymentTotal.
-                bd = _col(row, 'balanceDue', 'balancedue')
+                bd = _col_first(
+                    row,
+                    'balanceDue',
+                    'balancedue',
+                    'balance',
+                    'remainingAmount',
+                    'remainingamount',
+                    'amountDue',
+                    'amountdue',
+                )
                 try:
                     bdf = float(bd) if bd is not None else None
                 except (TypeError, ValueError):
                     bdf = None
-                if bdf is not None and float_compare(bdf, 0.0, precision_rounding=0.01) <= 0:
+                if bdf is not None and float_compare(
+                    float_round(bdf, precision_rounding=0.01),
+                    0.02,
+                    precision_rounding=0.01,
+                ) <= 0:
                     paid = True
+            if not paid:
+                ps = payment_sums.get(int(hid))
+                if ps is not None:
+                    if _payment_covers(ps, totf):
+                        paid = True
+                    elif (
+                        line_sum is not None
+                        and line_sum > 0
+                        and self._fishbowl_line_total_matches_header_total(totf, line_sum, prec)
+                        and _payment_covers(ps, line_sum)
+                    ):
+                        paid = True
+            if not paid:
+                paid = self._so_row_heuristic_paid_in_full(row, totf)
+            if not paid and getattr(self, 'fishbowl_paid_when_sopayment_row_exists', False):
+                if self._so_has_any_sopayment_row(int(hid)):
+                    paid = False
+                    bd = _col_first(
+                        row,
+                        'balanceDue',
+                        'balancedue',
+                        'balance',
+                        'remainingAmount',
+                        'remainingamount',
+                        'amountDue',
+                        'amountdue',
+                    )
+                    try:
+                        bdf = float(bd) if bd is not None else None
+                    except (TypeError, ValueError):
+                        bdf = None
+                    if bdf is None:
+                        paid = True
+                    elif float_compare(
+                        float_round(bdf, precision_rounding=prec),
+                        0.02,
+                        precision_rounding=prec,
+                    ) <= 0:
+                        paid = True
             h['fishbowl_paid_in_full'] = paid
 
-    def enrich_so_headers_payment_memo_hints(self, headers):
-        """Set ``fishbowl_paid_in_full`` when Fishbowl SO memos indicate payment is verified.
+        _apply_fishbowl_amount_paid_to_headers()
 
-        Complements :meth:`enrich_so_headers_payment_flags` when MySQL totals do not yet show paid
-        (e.g. BigCommerce + AvaTax) but staff memos record **Payment Verified**."""
-        self.ensure_one()
-        if not headers:
-            return
-        for h in headers:
-            if h.get('fishbowl_paid_in_full'):
+    def _fishbowl_line_total_matches_header_total(self, totf, line_sum, prec=0.01):
+        """Whether ``soitem`` line sum is close enough to header total to compare payment against it.
+
+        When header total and line sum differ a lot (partial payments, incomplete line data, etc.),
+        comparing paid amount only to ``line_sum`` can wrongly mark the order paid in full (e.g. $60k
+        paid vs $60k lines while the Fishbowl header total is still $89k).
+        """
+        if line_sum is None or totf is None:
+            return False
+        try:
+            t = float(totf)
+            ls = float(line_sum)
+        except (TypeError, ValueError):
+            return False
+        if t <= 0 or ls <= 0:
+            return False
+        diff = abs(float_round(t - ls, precision_rounding=prec))
+        # Allow tax / rounding drift: 1% of order or $0.02, whichever is larger (capped at $500).
+        tol = min(500.0, max(0.02, float_round(t * 0.01, precision_rounding=prec)))
+        return float_compare(diff, tol, precision_rounding=prec) <= 0
+
+    def _so_row_heuristic_paid_in_full(self, full, totf):
+        """True when ``so`` has a payment-like float column covering ``totf`` (non-standard column names)."""
+        if not full or totf <= 0:
+            return False
+        prec = 0.01
+        nt = float_round(totf, precision_rounding=prec)
+        for k, v in full.items():
+            if k is None or v is None:
                 continue
-            so_id = h.get('id')
-            if so_id is None:
+            kl = str(k).lower()
+            if 'date' in kl or 'time' in kl or 'memo' in kl:
+                continue
+            if kl in ('id', 'soid', 'customerid', 'statusid', 'currencyid', 'taxrateid', 'paymentmethodid'):
+                continue
+            if 'unpaid' in kl:
+                continue
+            if 'balance' in kl and 'due' not in kl and kl != 'balancedue':
+                continue
+            if 'paid' in kl:
+                pass
+            elif 'payment' in kl and 'total' in kl.replace('_', ''):
+                pass
+            elif kl in ('amountpaid', 'paidtotal'):
+                pass
+            else:
                 continue
             try:
-                memos = self.fetch_so_memos(int(so_id))
-            except Exception as e:
-                _logger.debug('Fishbowl memo hint for SO id %s: %s', so_id, e)
+                vf = float(v)
+            except (TypeError, ValueError):
                 continue
-            parts = []
-            for m in memos or []:
-                t = m.get('memo_text')
-                if t is None:
-                    t = m.get('memo')
-                if t:
-                    parts.append(str(t))
-            blob = ' '.join(parts).lower()
-            if 'payment verified' in blob:
-                h['fishbowl_paid_in_full'] = True
+            if vf <= 0 or vf > totf * 3 + 50.0:
+                continue
+            if float_compare(float_round(vf, precision_rounding=prec), nt, precision_rounding=prec) >= 0:
+                return True
+        return False
+
+    def _so_has_any_sopayment_row(self, so_id):
+        """True if any payment-related row exists for this SO (``sopayment`` or Fishbowl payment views)."""
+        sid = int(so_id)
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                for table in ('sopayment',):
+                    for sql in (
+                        f'SELECT 1 FROM {table} WHERE soId = %s LIMIT 1',
+                        f'SELECT 1 FROM {table} WHERE soid = %s LIMIT 1',
+                    ):
+                        try:
+                            cur.execute(sql, (sid,))
+                            if cur.fetchone():
+                                return True
+                        except Exception:
+                            continue
+                num = self._fishbowl_so_id_to_num_map([sid]).get(sid)
+                if num:
+                    for table in ('paymentview', 'totalpaidview'):
+                        if table not in self._FB_PAYMENT_TABLE_WHITELIST:
+                            continue
+                        try:
+                            cur.execute(f'SELECT 1 FROM {table} WHERE soNum = %s LIMIT 1', (num,))
+                            if cur.fetchone():
+                                return True
+                        except Exception:
+                            continue
+        finally:
+            conn.close()
+        return False
+
+    def refresh_so_header_payment_flags_from_mysql(self, hdr):
+        """Re-read one ``so`` row with ``SELECT *`` and refresh payment flags on ``hdr``.
+
+        Fishbowl versions use different column names; batch queries only select a few columns.
+        This runs at SO import **apply** time so paid-in-full detection matches the live DB row.
+        """
+        self.ensure_one()
+        so_id = hdr.get('id')
+        if so_id is None:
+            return
+        conn = self._get_connection()
+        full = {}
+        try:
+            with conn.cursor() as cur:
+                cur.execute('SELECT * FROM so WHERE id = %s', (int(so_id),))
+                row = cur.fetchone()
+                if row:
+                    full = dict(row)
+        except Exception as e:
+            _logger.debug('Fishbowl SELECT * so id=%s: %s', so_id, e)
+        finally:
+            conn.close()
+        if not full:
+            return
+
+        def _flt(row, *keys):
+            for key in keys:
+                for k, v in row.items():
+                    if k is None:
+                        continue
+                    if str(k).lower() == key.lower():
+                        if v is None:
+                            break
+                        try:
+                            return float(v)
+                        except (TypeError, ValueError):
+                            break
+            return None
+
+        line_sum_cached = self._fetch_so_line_total_sum_by_so_ids([int(so_id)]).get(int(so_id))
+        totf = self._fishbowl_so_row_order_total(full)
+        if totf is None or totf <= 0:
+            if line_sum_cached is not None and float(line_sum_cached) > 0:
+                totf = float(line_sum_cached)
+        totf = float(totf or 0)
+        if totf:
+            hdr['fishbowl_header_total'] = float_round(totf, precision_rounding=0.01)
+
+        ptf = self._fishbowl_so_row_payment_total_like(full)
+        if ptf is None:
+            ptf = _flt(
+                full,
+                'paymenttotal',
+                'paymentTotal',
+                'payment_total',
+                'amountpaid',
+                'amountPaid',
+                'paidtotal',
+                'paidTotal',
+                'paidamount',
+                'paidAmount',
+            )
+        if ptf is None:
+            for k, v in full.items():
+                if v is None or k is None:
+                    continue
+                kl = str(k).lower()
+                if 'payment' in kl and 'total' in kl.replace('_', ''):
+                    try:
+                        ptf = float(v)
+                        break
+                    except (TypeError, ValueError):
+                        continue
+        # Some Fishbowl builds expose the paid amount in a column literally named ``paid``.
+        if ptf is None:
+            pv = _flt(full, 'paid')
+            if pv is not None:
+                ptf = pv
+
+        bdf = _flt(
+            full,
+            'balancedue',
+            'balanceDue',
+            'balance_due',
+            'remainingamount',
+            'remainingAmount',
+            'amountdue',
+            'amountDue',
+            'balance',
+        )
+
+        prec = 0.01
+        paid = False
+        if totf > 0:
+            if ptf is not None and float_compare(
+                float_round(ptf, precision_rounding=prec),
+                float_round(totf, precision_rounding=prec),
+                precision_rounding=prec,
+            ) >= 0:
+                paid = True
+            elif bdf is not None and float_compare(
+                float_round(bdf, precision_rounding=prec),
+                0.02,
+                precision_rounding=prec,
+            ) <= 0:
+                paid = True
+
+        ps = None
+        if not paid and totf > 0:
+            ps = self._fetch_so_payment_total_sum_by_so_ids([int(so_id)]).get(int(so_id))
+            if ps is not None and float_compare(
+                float_round(float(ps), precision_rounding=prec),
+                float_round(totf, precision_rounding=prec),
+                precision_rounding=prec,
+            ) >= 0:
+                paid = True
+            if not paid and ps is not None:
+                if line_sum_cached is None:
+                    line_sum_cached = self._fetch_so_line_total_sum_by_so_ids([int(so_id)]).get(
+                        int(so_id)
+                    )
+                if line_sum_cached is not None and float(line_sum_cached) > 0:
+                    if self._fishbowl_line_total_matches_header_total(totf, line_sum_cached, prec):
+                        if float_compare(
+                            float_round(float(ps), precision_rounding=prec),
+                            float_round(float(line_sum_cached), precision_rounding=prec),
+                            precision_rounding=prec,
+                        ) >= 0:
+                            paid = True
+
+        if not paid and totf > 0:
+            paid = self._so_row_heuristic_paid_in_full(full, totf)
+
+        if not paid and totf > 0 and getattr(self, 'fishbowl_paid_when_sopayment_row_exists', False):
+            if self._so_has_any_sopayment_row(int(so_id)):
+                paid = False
+                if bdf is None:
+                    paid = True
+                elif float_compare(
+                    float_round(float(bdf), precision_rounding=prec),
+                    0.02,
+                    precision_rounding=prec,
+                ) <= 0:
+                    paid = True
+                if paid:
+                    _logger.info(
+                        'Fishbowl SO id=%s: paid_in_full=True (config fishbowl_paid_when_sopayment_row_exists)',
+                        so_id,
+                    )
+
+        if paid:
+            hdr['fishbowl_paid_in_full'] = True
+        elif totf > 0:
+            if ps is None:
+                ps = self._fetch_so_payment_total_sum_by_so_ids([int(so_id)]).get(int(so_id))
+            ps_dbg = ps
+            hint_keys = [
+                k
+                for k in full.keys()
+                if k
+                and (
+                    'pay' in str(k).lower()
+                    or 'bal' in str(k).lower()
+                    or str(k).lower() == 'total'
+                )
+            ][:30]
+            _logger.info(
+                'Fishbowl SO id=%s: paid not detected — total=%s payment_col=%s balance=%s '
+                'payment_sum=%s; sample column names=%s',
+                so_id,
+                totf,
+                ptf,
+                bdf,
+                ps_dbg,
+                hint_keys,
+            )
+
+    def enrich_so_headers_payment_memo_hints(self, headers):
+        """Memos are not used to set ``fishbowl_paid_in_full`` (text is unreliable vs ``totalpaidview`` / balance).
+
+        Paid-in-full is determined from MySQL amounts in :meth:`enrich_so_headers_payment_flags` only.
+        """
+        self.ensure_one()
+        return
+
+    def apply_odoo_sale_order_total_to_fishbowl_header(self, sale_order, hdr, ctx):
+        """Add one adjustment line so Odoo ``amount_total`` matches Fishbowl.
+
+        * If Fishbowl shows **paid in full** (``fishbowl_paid_in_full``): target Odoo total is **$0**.
+        * Else if **Fishbowl** ``so.total`` is known (``fishbowl_header_total`` ``T``): target is
+          ``max(0, T - P)`` where ``P`` is ``fishbowl_amount_paid``, so Odoo reflects **amount due**
+          after partial payments (not the full header total).
+
+        Returns whether a line was created.
+        """
+        self.ensure_one()
+        if not getattr(self, 'zero_balance_when_fishbowl_paid', True):
+            return False
+        # Batch :meth:`enrich_so_headers_payment_flags` already ran on this ``hdr`` during import.
+        # Re-querying MySQL here (per SO) duplicated ~15+ payment SQL variants + raw/brute
+        # scans for every order. Only refresh when we still have nothing to align to.
+        needs_mysql_refresh = hdr.get('fishbowl_paid_in_full') is not True and hdr.get(
+            'fishbowl_header_total'
+        ) is None
+        if needs_mysql_refresh:
+            self.refresh_so_header_payment_flags_from_mysql(hdr)
+        so = sale_order.sudo()
+        prec = so.currency_id.rounding or 0.01
+        target = None
+        if hdr.get('fishbowl_paid_in_full'):
+            target = 0.0
+        elif hdr.get('fishbowl_header_total') is not None:
+            try:
+                T = float(hdr['fishbowl_header_total'])
+            except (TypeError, ValueError):
+                return False
+            try:
+                P = float(hdr.get('fishbowl_amount_paid') or 0.0)
+            except (TypeError, ValueError):
+                P = 0.0
+            target = max(0.0, float_round(T - P, precision_rounding=prec))
+        else:
+            return False
+        so.env.flush_all()
+        so.invalidate_recordset()
+        cur = float_round(so.amount_total, precision_rounding=prec)
+        target = float_round(float(target), precision_rounding=prec)
+        if float_compare(cur, target, precision_rounding=prec) == 0:
+            return False
+        delta = float_round(target - cur, precision_rounding=prec)
+        if float_compare(abs(delta), 0.0, precision_rounding=prec) == 0:
+            return False
+        tmpl = self.env.ref(
+            'fishbowl_open_import.product_template_fishbowl_so_adjustment',
+            raise_if_not_found=False,
+        )
+        if not tmpl:
+            return False
+        adj = tmpl.product_variant_id
+        if hdr.get('fishbowl_paid_in_full'):
+            label = 'Fishbowl: paid in full (import adjustment to zero balance)'
+        elif float_compare(target, 0.0, precision_rounding=prec) == 0:
+            label = (
+                'Fishbowl: net order total $0 (import adjustment; Credit Return / offset lines '
+                'not on SO)'
+            )
+        else:
+            try:
+                p_lbl = float(hdr.get('fishbowl_amount_paid') or 0.0)
+            except (TypeError, ValueError):
+                p_lbl = 0.0
+            if p_lbl > 0.0:
+                label = 'Fishbowl: order total after payment applied (import alignment)'
+            else:
+                label = 'Fishbowl: order total alignment (import)'
+        line_vals = {
+            'order_id': so.id,
+            'product_id': adj.id,
+            'product_uom_qty': 1.0,
+            'price_unit': delta,
+            'technical_price_unit': delta,
+            'fishbowl_line_label': label,
+        }
+        # Avoid category/default product taxes so the line hits exactly ``target`` (usually $0).
+        if 'tax_ids' in self.env['sale.order.line']._fields:
+            line_vals['tax_ids'] = [(6, 0, [])]
+        self.env['sale.order.line'].with_context(**ctx).create(line_vals)
+        return True
 
     def fetch_so_lines(self, so_id):
         """Return soitem rows for a Fishbowl SO. Includes ``line_type_name`` when soitemtype joins."""

@@ -292,12 +292,14 @@ class FishbowlSyncConfigPartner(models.Model):
             'list_price': list_price,
             'standard_price': std_cost,
             'type': 'consu',
-            'is_storable': True,
+            'is_storable': False,
             'fishbowl_part_id': int(part_id),
             'sale_ok': bool(so_line),
-            'purchase_ok': True,
+            'purchase_ok': False,
             'product_tag_ids': [(6, 0, [tag.id])],
         }
+        if 'tracking' in self.env['product.template']._fields:
+            tmpl_vals['tracking'] = 'none'
         tmpl = self.env['product.template'].with_context(**self._fishbowl_ctx()).create(tmpl_vals)
 
         po_v = None
@@ -373,11 +375,13 @@ class FishbowlSyncConfigPartner(models.Model):
             'list_price': list_price,
             'standard_price': std_cost,
             'type': 'consu',
-            'is_storable': True,
+            'is_storable': False,
             'sale_ok': bool(is_so_line),
-            'purchase_ok': True,
+            'purchase_ok': False,
             'product_tag_ids': [(6, 0, [tag.id])],
         }
+        if 'tracking' in self.env['product.template']._fields:
+            tmpl_vals['tracking'] = 'none'
         tmpl = self.env['product.template'].with_context(**self._fishbowl_ctx()).create(tmpl_vals)
         _logger.warning(
             'Fishbowl import: created product without Fishbowl part row for %s',

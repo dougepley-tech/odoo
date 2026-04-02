@@ -17,8 +17,8 @@ class SaleOrderLine(models.Model):
         string='Fishbowl: skip stock (already shipped)',
         default=False,
         copy=False,
-        help='Set when Fishbowl shows this line fully shipped. Odoo skips procurement/stock moves and '
-        'marks delivered quantity manually so inventory is not affected.',
+        help='Set when Fishbowl shows this line fully shipped or fully picked (pickitem qty incl. '
+        'Committed). Odoo skips procurement/stock moves and marks delivered quantity manually.',
     )
 
     @api.depends('fishbowl_skip_procurement', 'product_id', 'is_expense')

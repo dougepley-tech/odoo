@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Fishbowl Open Import',
-    'version': '19.0.1.0.111',
+    'version': '19.0.1.0.137',
     'category': 'Inventory/Sales/Purchase',
     'summary': 'Import open Fishbowl sales/purchase orders, inventory, and master data via MySQL',
     'description': """
@@ -16,7 +16,7 @@ Fishbowl MySQL → Odoo 19
 * Atomic SO/PO imports; suppressed mail on import; optional Fishbowl Sales Rep (``sysuser`` first/last name) → Odoo salesperson on import; channel logins (BigC, IAGOFFROAD, Amazon, AmazonFBA) → ``crm.team`` without salesperson.
 * Optional Fishbowl → Odoo fulfillment sync (shipped qty, picked flags, tracking on deliveries) and a dedicated HTML field for Fishbowl SO notes (so.note).
 * Optional incoming receipt for **Credit Return** lines (setting on Fishbowl MySQL config; remaining qty from ``receiptitem``; optional receipt when Fishbowl already shows fully received; **RMA In** / RMA location when ``rma_odoo_19`` warehouse fields are set).
-* Optional **zero-balance adjustment line** when Fishbowl shows the SO paid (setting on Fishbowl MySQL config; uses ``so.paymentTotal`` vs ``so.total``, with ``balanceDue`` fallback).
+* Optional **order total alignment** (setting on Fishbowl MySQL config): paid-in-full → Odoo $0; partial payments → adjustment for amount paid so Odoo shows amount due; Fishbowl ``so.total`` (including net **$0** RMA). Fishbowl **Credit Return** rows import as extra SOL lines on the **Fishbowl SO adjustment** service product (negative amount; not the storable SKU, so no extra delivery for the return row).
 * Optional import of Fishbowl Sales Order Memo tab rows (``memo`` + ``table`` or ``somemo``) as internal notes on the Odoo order chatter.
 * Optional import of Fishbowl Purchase Order Memo tab rows (``memo`` + ``table`` or ``pomemo``) to the PO chatter.
 

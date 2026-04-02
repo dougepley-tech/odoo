@@ -24,6 +24,7 @@
                         <field name="create_credit_return_receipts"/>
                         <field name="credit_return_receipt_when_fishbowl_fully_received"/>
                         <field name="zero_balance_when_fishbowl_paid"/>
+                        <field name="fishbowl_paid_when_sopayment_row_exists"/>
                     </group>
                     <group string="Purchase order import">
                         <field name="import_po_status_names" placeholder="One Fishbowl postatus.name per line"/>

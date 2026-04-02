@@ -9,6 +9,7 @@
                 <field name="fishbowl_so_id" readonly="1"/>
                 <field name="fishbowl_num" readonly="1"/>
                 <field name="fishbowl_status_name" readonly="1"/>
+                <field name="fishbowl_amount_paid" readonly="1"/>
                 <field name="fishbowl_so_note" colspan="2" readonly="1" invisible="not fishbowl_so_note"/>
             </xpath>
         </field>

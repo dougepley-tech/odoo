@@ -33,13 +33,10 @@ class FishbowlLocationMap(models.Model):
     )
     active = fields.Boolean(default=True)
 
-    _sql_constraints = [
-        (
-            'fishbowl_location_map_group_type_name_company_uniq',
-            'UNIQUE(fishbowl_group_name, fishbowl_type_name, fishbowl_location_name, company_id)',
-            'This group+type+location name mapping already exists for this company.',
-        ),
-    ]
+    _group_type_name_company_uniq = models.Constraint(
+        'UNIQUE(fishbowl_group_name, fishbowl_type_name, fishbowl_location_name, company_id)',
+        'This group+type+location name mapping already exists for this company.',
+    )
 
     @api.model
     def resolve_location(self, company, group_name, type_name, location_name=None):

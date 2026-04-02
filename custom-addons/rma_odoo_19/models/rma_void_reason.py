@@ -11,10 +11,7 @@ class RmaVoidReason(models.Model):
     active = fields.Boolean(default=True)
     company_id = fields.Many2one(comodel_name="res.company")
 
-    _sql_constraints = [
-        (
-            "name_company_uniq",
-            "unique (name, company_id)",
-            "Void reason name already exists.",
-        ),
-    ]
+    _name_company_uniq = models.Constraint(
+        "UNIQUE (name, company_id)",
+        "Void reason name already exists.",
+    )

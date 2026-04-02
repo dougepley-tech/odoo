@@ -174,8 +174,9 @@ class BigCommerceOrderSync(models.Model):
                     'items_updated': self.orders_updated,
                     'items_failed': self.orders_failed,
                 })
-                # Also update the sync record itself to ensure UI sees progress
+                # Persist total_items on the sync record so refreshed UI shows full count (not only page size)
                 self.write({
+                    'total_items': self.total_items,
                     'processed_items': self.processed_items,
                     'current_item': self.current_item or '',
                 })
@@ -213,13 +214,21 @@ class BigCommerceOrderSync(models.Model):
             
             self.state = 'done'
             total_items = self.orders_created + self.orders_updated + self.orders_failed
+            warn_since = (
+                (self.sync_operation_id and self.sync_operation_id.start_date)
+                or self.config_id.last_order_sync
+                or (fields.Datetime.now() - timedelta(days=1))
+            )
             warnings_count = self.env['bigcommerce.sync.log'].search_count([
                 ('config_id', '=', self.config_id.id),
                 ('sync_type', '=', 'order'),
                 ('log_level', '=', 'WARNING'),
-                ('log_date', '>=', self.config_id.last_order_sync or fields.Datetime.now() - timedelta(days=1))
+                ('log_date', '>=', warn_since)
             ])
+            sync_time = fields.Datetime.now()
             self.config_id.write({
+                'last_order_sync': sync_time,
+                'order_sync_last_attempt_at': sync_time,
                 'last_order_sync_total': total_items,
                 'last_order_sync_updated': self.orders_updated,
                 'last_order_sync_failed': self.orders_failed,
@@ -265,8 +274,8 @@ class BigCommerceOrderSync(models.Model):
             self.state = 'error'
             self.error_message = str(e)
             
-            # Update sync operation record on error
-            if self.sync_operation_id:
+            # Update sync operation record on error (keep 'cancelled' if user cancelled)
+            if self.sync_operation_id and self.sync_operation_id.state != 'cancelled':
                 self.sync_operation_id.write({
                     'state': 'failed',
                     'end_date': fields.Datetime.now(),
@@ -368,6 +377,7 @@ class BigCommerceOrderSync(models.Model):
         limit = 250
         filters = {}
         total_processed = 0
+        total_from_api = None  # X-BC-Total-Count from BigCommerce when available
         
         if self.min_date_modified:
             filters['min_date_modified'] = self.min_date_modified.strftime('%Y-%m-%d %H:%M:%S')
@@ -377,18 +387,24 @@ class BigCommerceOrderSync(models.Model):
         
         if self.date_to:
             filters['max_date_created'] = self.date_to.strftime('%Y-%m-%d %H:%M:%S')
-        
-        # Get initial estimate
+
+        # Total for progress: GET /v2/orders/count (same filters as list). V2 list responses often
+        # omit X-BC-Total-Count; without this the UI only showed the current page size (e.g. 250).
         try:
-            first_page = api.get_orders(page=1, limit=limit, **filters)
-            if first_page:
-                self.total_items = len(first_page)
-                self.current_item = "Initializing..."
+            count_result = api.get_orders_count(**filters)
+            if count_result is not None:
+                total_from_api = count_result
+                self.total_items = max(0, int(count_result))
+                self.current_item = (
+                    f"Found {self.total_items} orders to process..."
+                    if self.total_items
+                    else "No orders match the filters."
+                )
                 self._update_sync_operation()
                 self.env.cr.commit()
-        except:
-            pass
-        
+        except Exception as e:
+            _logger.warning("Could not get order count from BigCommerce (will use per-page total): %s", e)
+
         while True:
             try:
                 orders = api.get_orders(page=page, limit=limit, **filters)
@@ -406,8 +422,20 @@ class BigCommerceOrderSync(models.Model):
                 
                 if not orders:
                     break
-                
-                if page > 1:
+
+                # If count endpoint failed: use X-BC-Total-Count on first page, else grow by page size
+                if page == 1 and total_from_api is None:
+                    header_total = getattr(orders, '_total_count', None)
+                    if header_total is not None:
+                        total_from_api = header_total
+                        self.total_items = header_total
+                        self.current_item = f"Found {header_total} orders to process..."
+                    else:
+                        self.total_items = len(orders)
+                        self.current_item = "Initializing..."
+                    self._update_sync_operation()
+                    self.env.cr.commit()
+                elif page > 1 and total_from_api is None:
                     self.total_items += len(orders)
                     self.env.cr.commit()
                 

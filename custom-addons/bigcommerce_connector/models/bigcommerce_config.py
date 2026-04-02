@@ -420,7 +420,14 @@ class BigCommerceConfig(models.Model):
     
     # Last Sync Times
     last_product_sync = fields.Datetime(string='Last Product Sync')
-    last_order_sync = fields.Datetime(string='Last Order Sync')
+    last_order_sync = fields.Datetime(
+        string='Last Order Sync',
+        help='Time of the last completed successful order sync (dashboard and filters).',
+    )
+    order_sync_last_attempt_at = fields.Datetime(
+        string='Last Order Sync Attempt',
+        help='Internal: last time an auto order sync was started, for cron interval scheduling only.',
+    )
     last_inventory_sync = fields.Datetime(string='Last Inventory Sync')
     last_customer_sync = fields.Datetime(string='Last Customer Sync')
     last_fulfillment_sync = fields.Datetime(string='Last Fulfillment Sync')
@@ -1097,6 +1104,7 @@ class BigCommerceConfig(models.Model):
         configs = self.search([('active', '=', True), ('auto_sync_orders', '=', True)])
         for config in configs:
             try:
+                last_for_order_cron = config.order_sync_last_attempt_at or config.last_order_sync
                 if config._should_run_sync(
                     config.auto_sync_orders_frequency,
                     config.auto_sync_orders_interval_number,
@@ -1105,7 +1113,7 @@ class BigCommerceConfig(models.Model):
                     config.auto_sync_orders_day_of_week,
                     config.auto_sync_orders_day_of_month,
                     config.auto_sync_orders_month,
-                    config.last_order_sync
+                    last_for_order_cron
                 ):
                     _logger.info(f"Auto-syncing orders for config: {config.name}")
                     config._trigger_order_sync()
@@ -1244,11 +1252,23 @@ class BigCommerceConfig(models.Model):
         IMPORTANT:
         - Use the *previous* last_order_sync (or last successful operation) as the
           min_date_modified filter so we sync orders modified since the last run.
-        - Then update last_order_sync to NOW and commit immediately so only one
-          cron worker can claim this scheduled run.
+        - Set order_sync_last_attempt_at to NOW and commit so cron intervals and
+          concurrent workers behave correctly. Do not update last_order_sync here;
+          that field is set only when a sync completes successfully (dashboard).
         """
         self.ensure_one()
         try:
+            if self.env['bigcommerce.sync.operation'].search([
+                ('config_id', '=', self.id),
+                ('sync_type', '=', 'order'),
+                ('state', '=', 'running'),
+            ], limit=1):
+                _logger.info(
+                    "Skipping order auto-sync for config %s: an order sync is already running",
+                    self.name,
+                )
+                return
+
             # Determine min_date_modified based on previous successful syncs
             previous_last_sync = self.last_order_sync
             min_date_modified = None
@@ -1266,8 +1286,8 @@ class BigCommerceConfig(models.Model):
                 if last_sync_op:
                     min_date_modified = last_sync_op.end_date
 
-            # Record this run's start time for scheduling and dashboards
-            self.last_order_sync = fields.Datetime.now()
+            # Claim this scheduled run for cron (not shown as "last successful sync")
+            self.order_sync_last_attempt_at = fields.Datetime.now()
             self.env.cr.commit()
 
             _logger.info(

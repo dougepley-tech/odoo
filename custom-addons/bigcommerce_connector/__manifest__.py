@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'BigCommerce Connector',
-    'version': '19.0.1.0.5',
+    'version': '19.0.1.0.8',
     'category': 'Sales',
     'summary': 'Connect Odoo to BigCommerce API for syncing products, orders, inventory, and customers',
     'description': """

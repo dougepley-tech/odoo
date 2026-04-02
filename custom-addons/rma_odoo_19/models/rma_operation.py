@@ -60,9 +60,10 @@ class RmaOperation(models.Model):
         string="Do not group deliveries",
     )
 
-    _sql_constraints = [
-        ("name_uniq", "unique (name)", "That operation name already exists !"),
-    ]
+    _name_uniq = models.Constraint(
+        "UNIQUE (name)",
+        "That operation name already exists !",
+    )
 
     @api.model
     def _get_rma_draft_domain(self):
