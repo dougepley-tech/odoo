@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Fishbowl Open Import',
-    'version': '19.0.1.0.137',
+    'version': '19.0.1.0.139',
     'category': 'Inventory/Sales/Purchase',
     'summary': 'Import open Fishbowl sales/purchase orders, inventory, and master data via MySQL',
     'description': """

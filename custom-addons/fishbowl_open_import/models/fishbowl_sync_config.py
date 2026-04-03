@@ -917,22 +917,39 @@ class FishbowlSyncConfig(models.Model):
     def _fishbowl_so_row_order_total(self, row):
         """Best-effort order total from a Fishbowl ``so`` row (column names differ by version).
 
+        **Signed** final totals (e.g. ``so.total``) must be returned even when **negative** (misc
+        credits / net credit balance). Older code only accepted ``f >= 0`` on ``total``, which
+        wrongly fell through to ``subTotal`` / ``totalPrice`` and inflated alignment targets.
+
         Many Fishbowl databases use **only** ``totalPrice`` / ``subTotal`` on ``so`` (no ``total``
         column). Some builds omit header totals entirely—then callers fall back to ``soitem`` sums.
         """
         if not row:
             return None
-        preferred = (
+        # Final order total columns: return first match including **negative** (credit) balances.
+        signed_final = (
             'total',
+            'grandTotal',
+            'orderTotal',
+            'soTotal',
+            'totalAmount',
+        )
+        for name in signed_final:
+            for k, v in row.items():
+                if k is None or v is None:
+                    continue
+                if str(k).lower() == name.lower():
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        continue
+        # Mid-pipeline / gross columns: only use when non-negative (avoid flipping sign).
+        preferred_positive = (
             'totalPrice',
             'subTotal',
-            'totalAmount',
-            'orderTotal',
-            'grandTotal',
-            'soTotal',
             'totalMoney',
         )
-        for name in preferred:
+        for name in preferred_positive:
             for k, v in row.items():
                 if k is None or v is None:
                     continue
@@ -1353,7 +1370,11 @@ class FishbowlSyncConfig(models.Model):
 
         line_sum_cached = self._fetch_so_line_total_sum_by_so_ids([int(so_id)]).get(int(so_id))
         totf = self._fishbowl_so_row_order_total(full)
-        if totf is None or totf <= 0:
+        # Do not replace a **negative** header total with a positive soitem sum (credit / misc lines).
+        if totf is None:
+            if line_sum_cached is not None and float(line_sum_cached) > 0:
+                totf = float(line_sum_cached)
+        elif float_compare(totf, 0.0, precision_rounding=0.01) == 0:
             if line_sum_cached is not None and float(line_sum_cached) > 0:
                 totf = float(line_sum_cached)
         totf = float(totf or 0)
@@ -1502,8 +1523,14 @@ class FishbowlSyncConfig(models.Model):
 
         * If Fishbowl shows **paid in full** (``fishbowl_paid_in_full``): target Odoo total is **$0**.
         * Else if **Fishbowl** ``so.total`` is known (``fishbowl_header_total`` ``T``): target is
-          ``max(0, T - P)`` where ``P`` is ``fishbowl_amount_paid``, so Odoo reflects **amount due**
-          after partial payments (not the full header total).
+          ``T - P`` (``P`` = ``fishbowl_amount_paid``). For **positive** ``T``, clamp to ``>= 0``
+          (amount due after partial pay). For **negative** ``T`` (net credit / misc credits), use the
+          signed net so alignment does not add a bogus positive line.
+
+        When **no payments** are recorded (``P == 0``) and the order is **not** paid in full, we **do
+        not** add a generic alignment line: the imported SO lines (including misc credits) are
+        expected to match Fishbowl. Alignment is only used when ``P > 0`` (partial payment), **or**
+        when ``T`` is **net zero** (Fishbowl header total ~$0; credit-return / RMA lines not on Odoo).
 
         Returns whether a line was created.
         """
@@ -1532,7 +1559,17 @@ class FishbowlSyncConfig(models.Model):
                 P = float(hdr.get('fishbowl_amount_paid') or 0.0)
             except (TypeError, ValueError):
                 P = 0.0
-            target = max(0.0, float_round(T - P, precision_rounding=prec))
+            T = float_round(T, precision_rounding=prec)
+            # No recorded payments: do not add a generic header alignment (lines include misc credits).
+            # Still align when T ~ 0 (net Fishbowl total not represented by imported lines).
+            if float_compare(P, 0.0, precision_rounding=prec) == 0:
+                if float_compare(T, 0.0, precision_rounding=prec) != 0:
+                    return False
+            net = float_round(T - P, precision_rounding=prec)
+            if float_compare(T, 0.0, precision_rounding=prec) < 0:
+                target = net
+            else:
+                target = max(0.0, net)
         else:
             return False
         so.env.flush_all()
@@ -1558,6 +1595,8 @@ class FishbowlSyncConfig(models.Model):
                 'Fishbowl: net order total $0 (import adjustment; Credit Return / offset lines '
                 'not on SO)'
             )
+        elif float_compare(target, 0.0, precision_rounding=prec) < 0:
+            label = 'Fishbowl: net order total (credit balance; import alignment)'
         else:
             try:
                 p_lbl = float(hdr.get('fishbowl_amount_paid') or 0.0)
