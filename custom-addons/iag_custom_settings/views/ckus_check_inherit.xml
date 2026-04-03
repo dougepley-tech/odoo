@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <template id="ckus_check_inherit_iag" inherit_id="l10n_us_check_printing.ckus_check" active="False">
+        <xpath expr="//div[@class='ckus_payee_addr']" position="attributes">
+            <attribute name="style">margin-top: 30px;</attribute>
+        </xpath>
+        <xpath expr="//div[@class='ckus_memo']" position="attributes">
+            <attribute name="style">margin-top: 30px;</attribute>
+        </xpath>
+    </template>
+</odoo>

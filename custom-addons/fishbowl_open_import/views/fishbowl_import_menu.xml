@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Root app menu: appears on the Odoo home app launcher (not nested under Inventory). -->
+    <!-- Root app: home launcher (web_icon + action, same pattern as iag_custom_settings). -->
     <menuitem
         id="menu_fishbowl_open_import_app"
         name="Fishbowl Import"
+        action="action_fishbowl_sync_config"
         sequence="45"
+        web_icon="fishbowl_open_import,static/description/icon.png"
         groups="fishbowl_open_import.group_fishbowl_import"
-        web_icon="stock,static/description/icon.png"
     />
     <!-- Top bar order: lower sequence = further left; Configuration uses a high sequence = far right. -->
     <menuitem id="menu_fishbowl_mapping" name="Mapping" parent="menu_fishbowl_open_import_app" sequence="10"/>

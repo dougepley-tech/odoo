@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Fishbowl Open Import',
-    'version': '19.0.1.0.139',
+    'version': '19.0.1.0.142',
     'category': 'Inventory/Sales/Purchase',
     'summary': 'Import open Fishbowl sales/purchase orders, inventory, and master data via MySQL',
     'description': """
@@ -64,4 +64,5 @@ Manual tests:
     'installable': True,
     'application': True,
     'post_init_hook': 'post_init_hook',
+    'images': ['static/description/icon.png'],
 }

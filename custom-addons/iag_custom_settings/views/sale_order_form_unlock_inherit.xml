@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="sale_order_form_unlock_inherit" model="ir.ui.view">
+        <field name="name">sale.order.form.unlock.inherit</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//button[@name='action_unlock']" position="attributes">
+                <attribute name="groups">sales_team.group_sale_manager,iag_custom_settings.group_sale_order_lock_unlock</attribute>
+            </xpath>
+            <xpath expr="//button[@name='action_lock']" position="attributes">
+                <attribute name="groups">sales_team.group_sale_manager,iag_custom_settings.group_sale_order_lock_unlock</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>
