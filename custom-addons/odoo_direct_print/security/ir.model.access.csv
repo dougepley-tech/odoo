@@ -1,9 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_iag_printer_user,iag.printer user,model_iag_printer,base.group_user,1,0,0,0
-access_iag_printer_manager,iag.printer manager,model_iag_printer,base.group_system,1,1,1,1
-access_iag_print_job_user,iag.print.job user,model_iag_print_job,base.group_user,1,0,0,0
-access_iag_print_job_manager,iag.print.job manager,model_iag_print_job,base.group_system,1,1,1,1
-access_iag_print_scenario_user,iag.print.scenario user,model_iag_print_scenario,base.group_user,1,0,0,0
-access_iag_print_scenario_manager,iag.print.scenario manager,model_iag_print_scenario,base.group_system,1,1,1,1
-access_iag_print_user_rule_user,iag.print.user.rule user,model_iag_print_user_rule,base.group_user,1,0,0,0
-access_iag_print_user_rule_manager,iag.print.user.rule manager,model_iag_print_user_rule,base.group_system,1,1,1,1

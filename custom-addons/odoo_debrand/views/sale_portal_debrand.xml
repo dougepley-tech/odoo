@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<odoo>
-    <!-- Remove only the "Connect with your software!" button (its immediate wrapper div). -->
-    <template id="sale_order_portal_template_debrand" inherit_id="sale.sale_order_portal_template" name="Sale Order Portal Debrand">
-        <xpath expr="//button[@id='portal_connect_software_modal_btn']/parent::div" position="replace"/>
-    </template>
-</odoo>
